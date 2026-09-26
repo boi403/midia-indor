@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; script-src 'self' 'unsafe-inline'; connect-src 'self';">
+<title>Software de Mídia Indoor sem mensalidade | Smart TV e TV Box</title>
+<meta name="description" content="Gerencie suas telas em restaurantes, academias, lojas e condomínios pagando licença anual ou vitalícia. Roda em TV Box Android ou direto no navegador da Smart TV.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============ TOKENS ============ */
+:root{
+  --ink:#0C1016;
+  --panel:#141A23;
+  --panel-2:#1B222D;
+  --line:#28323F;
+  --bone:#EEF1F5;
+  --mute:#93A1B3;
+  --r:#FF5A52;   /* subpixel R */
+  --g:#3DD68C;   /* subpixel G */
+  --b:#5B8CFF;   /* subpixel B */
+  --accent:var(--b);
+  --maxw:1180px;
+  --pad:clamp(20px,5vw,48px);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--ink);color:var(--bone);
+  font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:16px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+h1,h2,h3{font-family:"Archivo",system-ui,sans-serif;line-height:1.02;margin:0;text-wrap:balance;letter-spacing:-.02em}
+p{text-wrap:pretty;margin:0}
+a{color:inherit}
+img{max-width:100%}
+.wrap{max-width:var(--maxw);margin:0 auto;padding-inline:var(--pad)}
+.mono{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--mute)}
+:focus-visible{outline:2px solid var(--b);outline-offset:3px;border-radius:3px}
+
+/* subpixel stripe motif */
+.stripe{display:inline-flex;gap:2px;vertical-align:middle}
+.stripe i{width:3px;height:14px;border-radius:1px;display:block}
+.stripe i:nth-child(1){background:var(--r)}
+.stripe i:nth-child(2){background:var(--g)}
+.stripe i:nth-child(3){background:var(--b)}
+
+/* ============ NAV ============ */
+header{position:sticky;top:0;z-index:60;background:rgba(12,16,22,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;gap:24px;height:66px}
+.brand{display:flex;align-items:center;gap:10px;font-family:"Archivo";font-weight:900;font-size:17px;letter-spacing:-.03em;text-decoration:none}
+.nav ul{display:flex;gap:22px;list-style:none;margin:0 0 0 auto;padding:0;font-size:14.5px}
+.nav ul a{text-decoration:none;color:var(--mute)}
+.nav ul a:hover{color:var(--bone)}
+.nav .btn{margin-left:auto}
+@media(min-width:861px){.nav .btn{margin-left:0}}
+@media(max-width:860px){.nav ul{display:none}}
+
+/* ============ BUTTONS ============ */
+.btn{display:inline-flex;align-items:center;gap:9px;padding:13px 20px;border-radius:8px;font-weight:600;font-size:14.5px;text-decoration:none;border:1px solid transparent;transition:transform .15s,background .15s,border-color .15s;white-space:nowrap}
+.btn:hover{transform:translateY(-1px)}
+.btn-p{background:var(--b);color:#08111F}
+.btn-p:hover{background:#7BA5FF}
+.btn-s{border-color:var(--line);color:var(--bone);background:var(--panel)}
+.btn-s:hover{border-color:var(--mute)}
+.btn svg{width:15px;height:15px;flex:none}
+
+/* ============ HERO ============ */
+.hero{padding:clamp(48px,8vw,96px) 0 clamp(40px,6vw,72px);position:relative}
+.hero::before{content:"";position:absolute;inset:0;background:
+  radial-gradient(900px 420px at 78% 12%,rgba(91,140,255,.15),transparent 65%);pointer-events:none}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:clamp(32px,5vw,64px);align-items:center;position:relative}
+@media(max-width:1000px){.hero-grid{grid-template-columns:minmax(0,1fr)}}
+.chip{display:inline-flex;align-items:center;gap:9px;border:1px solid var(--line);background:var(--panel);padding:6px 12px 6px 8px;border-radius:100px;margin-bottom:22px}
+h1{font-size:clamp(38px,6.4vw,68px);font-weight:900}
+h1 .thru{position:relative;color:var(--mute);white-space:nowrap}
+h1 .thru::after{content:"";position:absolute;left:-2px;right:-2px;top:53%;height:5px;background:var(--r);transform:rotate(-2.5deg)}
+h1 em{font-style:normal;color:var(--b)}
+.lede{margin-top:22px;font-size:clamp(16px,2vw,18.5px);color:#C2CDDB;max-width:52ch}
+.cta-row{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+.kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:42px;border-top:1px solid var(--line);padding-top:22px}
+.kpi b{display:block;font-family:"Archivo";font-weight:900;font-size:clamp(22px,3.4vw,30px);letter-spacing:-.03em}
+.kpi span{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);display:block;margin-top:6px;line-height:1.4}
+
+/* ============ SIGNATURE: TV MOCK ============ */
+.tv{position:relative}
+.tv-frame{background:#05080C;border:1px solid var(--line);border-radius:14px;padding:11px 11px 30px;box-shadow:0 40px 80px -30px rgba(0,0,0,.9)}
+.tv-screen{position:relative;aspect-ratio:16/9;border-radius:6px;overflow:hidden;background:#0A0F16}
+.tv-screen::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(to bottom,rgba(255,255,255,.035) 0 1px,transparent 1px 3px);mix-blend-mode:overlay}
+.tv-foot{position:absolute;left:0;right:0;bottom:9px;display:flex;align-items:center;gap:8px;padding-inline:14px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--g);box-shadow:0 0 8px var(--g)}
+.tv-foot .mono{font-size:10px}
+.slot{position:absolute;inset:0;opacity:0;transition:opacity .5s;display:flex;flex-direction:column;padding:clamp(12px,2.4vw,22px)}
+.slot.on{opacity:1}
+/* slot 1 — menu digital */
+.s1{background:linear-gradient(150deg,#1A1206,#0B0906);justify-content:center}
+.s1 .eyebrow{color:#F2B24C}
+.s1 .row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px dashed rgba(242,178,76,.22);font-size:clamp(11px,1.5vw,15px)}
+.s1 .row b{font-family:"Archivo";font-weight:700}
+.s1 .row span{font-family:"IBM Plex Mono",monospace;color:#F2B24C;font-size:clamp(11px,1.5vw,15px);letter-spacing:0}
+/* slot 2 — notícias + clima */
+.s2{background:linear-gradient(150deg,#08131F,#060A10)}
+.s2 .top{display:flex;gap:12px;flex:1;min-height:0}
+.s2 .news{flex:1;display:flex;flex-direction:column;gap:7px;justify-content:center}
+.s2 .bar{height:8px;border-radius:2px;background:#1E3350}
+.s2 .bar.w1{width:88%}.s2 .bar.w2{width:66%}.s2 .bar.w3{width:75%}
+.s2 .head{font-family:"Archivo";font-weight:900;font-size:clamp(13px,2vw,20px);color:#fff;margin-bottom:6px}
+.s2 .weather{width:34%;border-left:1px solid #1E3350;padding-left:12px;display:flex;flex-direction:column;justify-content:center;gap:2px}
+.s2 .temp{font-family:"Archivo";font-weight:900;font-size:clamp(20px,3.6vw,38px);color:var(--b)}
+.s2 .ticker{margin-top:auto;border-top:1px solid #1E3350;padding-top:8px;overflow:hidden;white-space:nowrap}
+.s2 .ticker span{display:inline-block;animation:slide 14s linear infinite;font-family:"IBM Plex Mono",monospace;font-size:clamp(9px,1.2vw,12px);color:#7E9AC0}
+@keyframes slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+/* slot 3 — promo academia */
+.s3{background:linear-gradient(150deg,#0B1D14,#05100A);justify-content:flex-end}
+.s3 .kicker{display:inline-block;background:var(--g);color:#04160D;font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.14em;padding:4px 9px;border-radius:3px;align-self:flex-start;margin-bottom:auto}
+.s3 h4{font-family:"Archivo";font-weight:900;font-size:clamp(18px,3.4vw,36px);margin:0;color:#fff;line-height:.98}
+.s3 p{color:#8FD6B2;font-size:clamp(10px,1.4vw,14px);margin-top:8px}
+.prog{position:absolute;left:0;bottom:0;height:2px;background:var(--b);width:0}
+.tv-tabs{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+.tv-tabs button{flex:1;min-width:90px;background:var(--panel);border:1px solid var(--line);color:var(--mute);font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;padding:9px 6px;border-radius:6px;cursor:pointer;transition:.15s}
+.tv-tabs button[aria-selected="true"]{color:var(--bone);border-color:var(--b);background:rgba(91,140,255,.1)}
+
+/* ============ MARQUEE ============ */
+.marquee{border-block:1px solid var(--line);background:var(--panel);overflow:hidden;padding:14px 0}
+.marquee-in{display:flex;gap:0;width:max-content;animation:slide 38s linear infinite}
+.marquee-in span{font-family:"Archivo";font-weight:700;font-size:15px;color:var(--mute);padding-inline:20px;white-space:nowrap}
+.marquee-in span::after{content:"·";margin-left:20px;color:var(--b)}
+
+/* ============ SECTIONS ============ */
+section{padding:clamp(56px,8vw,104px) 0}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--b);margin-bottom:16px;display:flex;align-items:center;gap:10px}
+h2{font-size:clamp(28px,4.6vw,46px);font-weight:900;max-width:20ch}
+.sub{margin-top:18px;color:#B4C0CF;max-width:56ch;font-size:17px}
+
+/* cost chart */
+.cost{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:clamp(28px,5vw,60px);align-items:center}
+@media(max-width:900px){.cost{grid-template-columns:minmax(0,1fr)}}
+.chart-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+.legend{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:16px}
+.legend div{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mute)}
+.swatch{width:14px;height:3px;border-radius:2px}
+.chart-note{margin-top:14px;font-size:12.5px;color:var(--mute);border-top:1px solid var(--line);padding-top:12px}
+.bullets{list-style:none;padding:0;margin:26px 0 0;display:grid;gap:14px}
+.bullets li{display:flex;gap:12px;font-size:15.5px;color:#C2CDDB}
+.bullets svg{width:18px;height:18px;flex:none;margin-top:3px;color:var(--g)}
+
+/* feature grid */
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:44px}
+@media(max-width:900px){.grid3{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.grid3{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px;transition:border-color .2s,transform .2s}
+.card:hover{border-color:#3A4759;transform:translateY(-2px)}
+.card .idx{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.14em;color:var(--mute)}
+.card h3{font-size:19px;font-weight:700;margin:14px 0 9px}
+.card p{font-size:14.5px;color:#A9B6C6}
+
+/* pull band */
+.pull{border-block:1px solid var(--line);background:linear-gradient(90deg,rgba(91,140,255,.08),transparent 60%)}
+.pull p{font-family:"Archivo";font-weight:700;font-size:clamp(20px,3.2vw,32px);line-height:1.15;max-width:24ch;letter-spacing:-.02em}
+.pull .wrap{padding-block:clamp(40px,6vw,64px)}
+
+/* versions */
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:44px}
+@media(max-width:800px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.vcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px;display:flex;flex-direction:column}
+.vcard.feat{border-color:var(--b);background:linear-gradient(180deg,rgba(91,140,255,.09),var(--panel) 55%)}
+.vcard h3{font-size:23px;font-weight:900;margin-bottom:6px}
+.vcard .tag{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
+.vcard p{color:#A9B6C6;font-size:15px;margin:14px 0 22px}
+.vcard .btn{margin-top:auto;justify-content:center}
+.screenmock{height:104px;border-radius:8px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;margin-bottom:20px;background:#080C12}
+.screenmock .ph{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;color:#3A4759}
+.screenmock .logoblk{width:56px;height:56px;border-radius:10px;background:linear-gradient(135deg,var(--b),#2B4E9E);display:flex;align-items:center;justify-content:center;font-family:"Archivo";font-weight:900;color:#08111F;font-size:20px}
+
+/* steps */
+.steps{margin-top:44px;border-top:1px solid var(--line)}
+.step{display:grid;grid-template-columns:64px minmax(0,1fr) minmax(0,1fr);gap:20px;padding:26px 0;border-bottom:1px solid var(--line);align-items:start}
+@media(max-width:760px){.step{grid-template-columns:44px minmax(0,1fr);}.step p{grid-column:2}}
+.step .n{font-family:"Archivo";font-weight:900;font-size:26px;color:var(--line)}
+.step h3{font-size:20px;font-weight:700}
+.step p{color:#A9B6C6;font-size:15px}
+
+/* faq */
+.faq{margin-top:36px;border-top:1px solid var(--line)}
+details{border-bottom:1px solid var(--line)}
+summary{cursor:pointer;list-style:none;padding:22px 40px 22px 0;font-family:"Archivo";font-weight:700;font-size:clamp(16px,2.2vw,19px);position:relative}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";position:absolute;right:6px;top:50%;transform:translateY(-50%);font-family:"IBM Plex Mono";font-size:22px;color:var(--b);transition:transform .2s}
+details[open] summary::after{content:"−"}
+details p{padding:0 0 24px;color:#A9B6C6;max-width:70ch;font-size:15.5px}
+
+/* final cta */
+.final{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:clamp(32px,6vw,64px);text-align:center;position:relative;overflow:hidden}
+.final::before{content:"";position:absolute;inset:-40% 20% auto;height:300px;background:radial-gradient(closest-side,rgba(91,140,255,.22),transparent);pointer-events:none}
+.final h2{margin-inline:auto;max-width:18ch;position:relative}
+.final .lede{margin:20px auto 0;position:relative}
+.final .cta-row{justify-content:center;position:relative}
+
+/* footer */
+footer{border-top:1px solid var(--line);padding:48px 0 32px;color:var(--mute);font-size:14px}
+.fgrid{display:grid;grid-template-columns:minmax(0,1.4fr) repeat(2,minmax(0,1fr));gap:28px}
+@media(max-width:760px){.fgrid{grid-template-columns:minmax(0,1fr)}}
+footer h4{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--bone);margin:0 0 14px;font-weight:500}
+footer ul{list-style:none;padding:0;margin:0;display:grid;gap:9px}
+footer a{text-decoration:none}
+footer a:hover{color:var(--bone)}
+.fbot{margin-top:40px;padding-top:22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;font-size:12.5px}
+
+/* whatsapp float */
+.float{position:fixed;right:18px;bottom:18px;z-index:80;width:54px;height:54px;border-radius:50%;background:#25D366;display:grid;place-items:center;box-shadow:0 12px 28px -8px rgba(37,211,102,.6);transition:transform .18s}
+.float:hover{transform:scale(1.06)}
+.float svg{width:28px;height:28px;fill:#06240F}
+
+/* reveal */
+.rv{opacity:0;transform:translateY(18px);transition:opacity .6s,transform .6s}
+.rv.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  .rv{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#top">
+      <span class="stripe" aria-hidden="true"><i></i><i></i><i></i></span>
+      SUA MARCA
+    </a>
+    <ul>
+      <li><a href="#custo">Por que sem mensalidade</a></li>
+      <li><a href="#recursos">Recursos</a></li>
+      <li><a href="#versoes">Versões</a></li>
+      <li><a href="#faq">Dúvidas</a></li>
+    </ul>
+    <a class="btn btn-p" href="#contato">Testar grátis</a>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- HERO -->
+<div class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="chip rv">
+        <span class="stripe" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="mono">Android TV Box · Web Player Smart TV</span>
+      </span>
+      <h1 class="rv">Suas telas não precisam de <span class="thru">mensalidade</span>. Precisam de <em>programação</em>.</h1>
+      <p class="lede rv">Software de mídia indoor para restaurantes, academias, lojas e condomínios. Você monta a playlist do celular, a tela atualiza sozinha — e a cobrança é licença anual ou vitalícia, não boleto todo mês.</p>
+      <div class="cta-row rv">
+        <a class="btn btn-p" href="#contato">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          Testar 7 dias grátis
+        </a>
+        <a class="btn btn-s" href="#custo">Ver a conta de 24 meses</a>
+      </div>
+      <div class="kpis rv">
+        <div class="kpi"><b>R$ 0</b><span>Mensalidade</span></div>
+        <div class="kpi"><b>~4 min</b><span>Da instalação<br>à primeira tela no ar</span></div>
+        <div class="kpi"><b>100%</b><span>Roda offline<br>com cache local</span></div>
+      </div>
+    </div>
+
+    <!-- SIGNATURE -->
+    <div class="tv rv">
+      <div class="tv-frame">
+        <div class="tv-screen" id="screen">
+          <div class="slot s1 on" data-slot="0">
+            <span class="mono eyebrow" style="margin-bottom:12px">Cardápio · Almoço</span>
+            <div class="row"><b>Prato feito da casa</b><span>R$ 28,00</span></div>
+            <div class="row"><b>Executivo grelhado</b><span>R$ 36,00</span></div>
+            <div class="row"><b>Marmita 700g</b><span>R$ 24,00</span></div>
+            <div class="row"><b>Suco natural 500ml</b><span>R$ 9,00</span></div>
+          </div>
+          <div class="slot s2" data-slot="1">
+            <div class="top">
+              <div class="news">
+                <div class="head">Notícias do dia</div>
+                <div class="bar w1"></div><div class="bar w2"></div><div class="bar w3"></div>
+              </div>
+              <div class="weather">
+                <span class="mono" style="font-size:9px">Agora</span>
+                <span class="temp">27°</span>
+                <span class="mono" style="font-size:9px">Céu limpo</span>
+              </div>
+            </div>
+            <div class="ticker"><span>FEED AUTOMÁTICO · CLIMA · HORA CERTA · LOTERIAS · FEED AUTOMÁTICO · CLIMA · HORA CERTA · LOTERIAS · </span></div>
+          </div>
+          <div class="slot s3" data-slot="2">
+            <span class="kicker">MATRÍCULA</span>
+            <h4>Traga um amigo<br>e treine 2 meses grátis</h4>
+            <p>Válido até o fim do mês · fale na recepção</p>
+          </div>
+          <div class="prog" id="prog"></div>
+        </div>
+        <div class="tv-foot">
+          <span class="dot"></span>
+          <span class="mono">TELA 01 · ONLINE · 1920×1080</span>
+          <span class="mono" style="margin-left:auto" id="clock">--:--</span>
+        </div>
+      </div>
+      <div class="tv-tabs" role="tablist" aria-label="Modelos de tela">
+        <button role="tab" aria-selected="true" data-go="0">Menu digital</button>
+        <button role="tab" aria-selected="false" data-go="1">Notícias + clima</button>
+        <button role="tab" aria-selected="false" data-go="2">Promoção</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MARQUEE -->
+<div class="marquee" aria-hidden="true">
+  <div class="marquee-in" id="mq"></div>
+</div>
+
+<!-- CUSTO -->
+<section id="custo">
+  <div class="wrap cost">
+    <div class="rv">
+      <div class="eyebrow"><span class="stripe"><i></i><i></i><i></i></span> A conta que ninguém te mostra</div>
+      <h2>Dois anos de mensalidade custam mais que a tela.</h2>
+      <p class="sub">A maioria dos sistemas cobra por tela, todo mês, para sempre. Aqui você paga a licença uma vez por ano — ou uma vez só, na versão vitalícia — e a margem da sua operação fica com você.</p>
+      <ul class="bullets">
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg> Preço fecha antes de você vender a cota de anúncio.</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg> Sem reajuste surpresa no meio do contrato do cliente.</li>
+        <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg> Escalar de 1 para 20 telas não multiplica a dor de caixa.</li>
+      </ul>
+    </div>
+    <div class="chart-card rv">
+      <div class="legend">
+        <div><span class="swatch" style="background:var(--r)"></span> Concorrente com mensalidade</div>
+        <div><span class="swatch" style="background:var(--b)"></span> Licença anual</div>
+      </div>
+      <svg viewBox="0 0 520 300" width="100%" role="img" aria-label="Gráfico comparando custo acumulado em 24 meses">
+        <g id="chart-grid" stroke="#28323F" stroke-width="1"></g>
+        <g id="chart-labels" font-family="IBM Plex Mono" font-size="10" fill="#93A1B3"></g>
+        <polyline id="line-a" fill="none" stroke="#FF5A52" stroke-width="2.5" stroke-linejoin="round"/>
+        <polyline id="line-b" fill="none" stroke="#5B8CFF" stroke-width="2.5" stroke-linejoin="round"/>
+        <g id="chart-end" font-family="Archivo" font-weight="700" font-size="13"></g>
+      </svg>
+      <p class="chart-note">Simulação com 1 tela: R$ 89/mês no modelo recorrente × licença anual de R$ 349. Ajuste os valores para a sua tabela — o formato da curva não muda.</p>
+    </div>
+  </div>
+</section>
+
+<!-- RECURSOS -->
+<section id="recursos">
+  <div class="wrap">
+    <div class="rv">
+      <div class="eyebrow"><span class="stripe"><i></i><i></i><i></i></span> O que vai no player</div>
+      <h2>Feito para tela que fica ligada o dia inteiro.</h2>
+      <p class="sub">Nada de computador na sala, nada de pendrive. O player liga junto com o aparelho e busca a programação sozinho.</p>
+    </div>
+    <div class="grid3">
+      <div class="card rv"><span class="idx">01 / REMOTO</span><h3>Troca de conteúdo pelo celular</h3><p>Publicou no painel, a tela puxa a atualização em segundos. Serve para uma tela ou para uma rede inteira, de qualquer lugar.</p></div>
+      <div class="card rv"><span class="idx">02 / RESILIÊNCIA</span><h3>Continua rodando sem internet</h3><p>O conteúdo fica em cache no aparelho. Se a conexão cair, a programação segue no ar e sincroniza quando a rede voltar.</p></div>
+      <div class="card rv"><span class="idx">03 / BOOT</span><h3>Abre sozinho ao ligar</h3><p>Na versão TV Box, o player inicia junto com o Android. Ninguém precisa mexer no controle remoto todo dia de manhã.</p></div>
+      <div class="card rv"><span class="idx">04 / WIDGETS</span><h3>Clima, notícias e hora certa</h3><p>Blocos automáticos que enchem o intervalo entre os anúncios e dão motivo para as pessoas olharem a tela.</p></div>
+      <div class="card rv"><span class="idx">05 / WEB PLAYER</span><h3>Roda no navegador da Smart TV</h3><p>Samsung e LG rodam a programação direto pelo navegador, sem comprar TV Box. Nesse modo, o navegador é aberto manualmente.</p></div>
+      <div class="card rv"><span class="idx">06 / CRIAÇÃO</span><h3>Gerador de peças pronto</h3><p>Digite a oferta e escolha um modelo de varejo, clínica ou academia. Sai a arte vertical e horizontal, sem editor de vídeo.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PULL -->
+<div class="pull">
+  <div class="wrap">
+    <p class="rv">A tela só vira faturamento quando o conteúdo muda sem depender de você.</p>
+  </div>
+</div>
+
+<!-- VERSÕES -->
+<section id="versoes">
+  <div class="wrap">
+    <div class="rv">
+      <div class="eyebrow"><span class="stripe"><i></i><i></i><i></i></span> Aplicativo</div>
+      <h2>Com a sua marca ou sem marca nenhuma.</h2>
+      <p class="sub">Escolha como o app aparece na hora em que o cliente liga a TV — ou quando o técnico abre o aparelho para dar manutenção.</p>
+    </div>
+    <div class="grid2">
+      <div class="vcard rv">
+        <div class="screenmock"><span class="ph">TELA INICIAL LIMPA</span></div>
+        <span class="tag">White label</span>
+        <h3>Sem marca comercial</h3>
+        <p>Versão neutra, sem logo nem assinatura na abertura. Indicada para quem vende como serviço próprio e não quer expor o fornecedor.</p>
+        <a class="btn btn-s" href="#contato">Quero a versão white label</a>
+      </div>
+      <div class="vcard feat rv">
+        <div class="screenmock"><span class="logoblk">M</span></div>
+        <span class="tag">Personalizado</span>
+        <h3>Com a sua logomarca</h3>
+        <p>Sua identidade na tela de abertura e nos avisos do player. É o que dá cara de produto próprio na hora de apresentar a proposta.</p>
+        <a class="btn btn-p" href="#contato">Quero a versão personalizada</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- COMO FUNCIONA -->
+<section id="como">
+  <div class="wrap">
+    <div class="rv">
+      <div class="eyebrow"><span class="stripe"><i></i><i></i><i></i></span> Da caixa ao ar</div>
+      <h2>Quatro passos, uma vez por ponto.</h2>
+    </div>
+    <div class="steps">
+      <div class="step rv"><span class="n">1</span><h3>Instalar o player</h3><p>APK no TV Box Android ou o endereço do web player no navegador da Smart TV.</p></div>
+      <div class="step rv"><span class="n">2</span><h3>Parear a tela</h3><p>O player mostra um código de 6 dígitos. Você digita no painel e a tela entra na sua conta.</p></div>
+      <div class="step rv"><span class="n">3</span><h3>Montar a playlist</h3><p>Suba imagens e vídeos, defina a duração de cada peça e adicione os widgets que quiser.</p></div>
+      <div class="step rv"><span class="n">4</span><h3>Publicar</h3><p>Um clique envia para todas as telas do grupo. Dali em diante, só troca de conteúdo.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="wrap">
+    <div class="rv">
+      <div class="eyebrow"><span class="stripe"><i></i><i></i><i></i></span> Perguntas frequentes</div>
+      <h2>O que perguntam antes de fechar.</h2>
+    </div>
+    <div class="faq">
+      <details class="rv"><summary>Tem mesmo mensalidade zero?</summary><p>Sim. A cobrança é por licença de dispositivo: você escolhe o plano anual ou o vitalício com pagamento único. Não existe cobrança recorrente mês a mês.</p></details>
+      <details class="rv"><summary>Preciso comprar TV Box?</summary><p>Não obrigatoriamente. Com TV Box Android você ganha início automático ao ligar e gestão remota completa — é o indicado para rede de pontos. Já para uso próprio em uma ou duas telas, o web player no navegador da Smart TV resolve e sai mais barato.</p></details>
+      <details class="rv"><summary>Funciona em Samsung e LG sem aparelho extra?</summary><p>Funciona pelo navegador da própria TV. A diferença é que, nesse modo, alguém precisa abrir o navegador quando a TV for ligada. Se o ponto não tem quem faça isso todo dia, vale o TV Box.</p></details>
+      <details class="rv"><summary>E se a internet cair no ponto?</summary><p>A programação continua. O player guarda o conteúdo localmente e só precisa de rede para receber atualizações e reportar status.</p></details>
+      <details class="rv"><summary>Consigo revender para os meus clientes?</summary><p>Sim — é o uso mais comum. Você licencia os dispositivos, cobra do seu cliente o modelo que quiser e usa a versão white label ou personalizada para o app não expor o fornecedor.</p></details>
+      <details class="rv"><summary>Quantas telas dá para gerenciar em uma conta?</summary><p>Não há limite técnico de telas por conta. O que define o custo é a quantidade de licenças de dispositivo ativas, e elas podem ser agrupadas por cliente, cidade ou tipo de ponto.</p></details>
+    </div>
+  </div>
+</section>
+
+<!-- CTA FINAL -->
+<section id="contato">
+  <div class="wrap">
+    <div class="final rv">
+      <h2>Coloque uma tela no ar hoje e decida depois.</h2>
+      <p class="lede">Teste por 7 dias com o seu próprio conteúdo, no seu aparelho. Se não fizer sentido, você só desinstala — não tem cadastro de cartão nem contrato.</p>
+      <div class="cta-row">
+        <a class="btn btn-p" href="https://wa.me/5500000000000?text=Quero%20testar%20o%20sistema%20de%20m%C3%ADdia%20indoor" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          Falar no WhatsApp
+        </a>
+        <a class="btn btn-s" href="mailto:contato@seudominio.com.br">Receber a tabela por e-mail</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="fgrid">
+      <div>
+        <div class="brand" style="margin-bottom:14px">
+          <span class="stripe" aria-hidden="true"><i></i><i></i><i></i></span> SUA MARCA
+        </div>
+        <p style="max-width:34ch">Software de mídia indoor e sinalização digital para Android e navegador. Licença anual ou vitalícia, sem mensalidade.</p>
+      </div>
+      <div>
+        <h4>Navegar</h4>
+        <ul>
+          <li><a href="#custo">Por que sem mensalidade</a></li>
+          <li><a href="#recursos">Recursos</a></li>
+          <li><a href="#versoes">Versões do app</a></li>
+          <li><a href="#faq">Dúvidas</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Contato</h4>
+        <ul>
+          <li><a href="https://wa.me/5500000000000" target="_blank" rel="noopener noreferrer">WhatsApp (00) 00000-0000</a></li>
+          <li><a href="mailto:contato@seudominio.com.br">contato@seudominio.com.br</a></li>
+          <li>Cidade — UF</li>
+          <li>CNPJ 00.000.000/0001-00</li>
+        </ul>
+      </div>
+    </div>
+    <div class="fbot">
+      <span>© <span id="yr">2026</span> Sua Marca. Todos os direitos reservados.</span>
+      <span><a href="#">Política de privacidade</a> · <a href="#">Política de reembolso</a></span>
+    </div>
+  </div>
+</footer>
+
+<a class="float" href="https://wa.me/5500000000000?text=Quero%20saber%20mais" aria-label="Falar no WhatsApp" target="_blank" rel="noopener noreferrer">
+  <svg viewBox="0 0 24 24"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 004.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.8 14.09c-.25.69-1.44 1.32-1.98 1.36-.53.04-1.02.23-3.44-.72-2.9-1.14-4.73-4.1-4.87-4.29-.14-.19-1.16-1.54-1.16-2.94s.73-2.09 1-2.37c.26-.29.58-.36.77-.36l.55.01c.18.01.42-.07.65.5.25.6.84 2.07.91 2.22.07.15.12.32.02.51-.09.19-.14.31-.28.48l-.42.49c-.14.14-.28.29-.12.57.16.28.71 1.17 1.53 1.9 1.05.94 1.94 1.23 2.21 1.37.28.14.44.12.6-.07.16-.19.69-.81.88-1.08.18-.28.37-.23.62-.14.25.09 1.61.76 1.88.9.28.14.46.21.53.32.07.12.07.66-.18 1.34z"/></svg>
+</a>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---- marquee ---- */
+  var words = ["Restaurantes","Menu digital","Academias","Condomínios","Barbearias","Clínicas","Lojas de rua","Padarias","Rede de anúncios","Comunicação interna","Salas de espera","Postos"];
+  var mq = document.getElementById("mq");
+  var html = words.map(function(w){return "<span>"+w+"</span>";}).join("");
+  mq.innerHTML = html + html;
+
+  /* ---- relógio do mock ---- */
+  function tick(){
+    var d = new Date();
+    document.getElementById("clock").textContent =
+      String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+  }
+  tick(); setInterval(tick, 20000);
+  document.getElementById("yr").textContent = new Date().getFullYear();
+
+  /* ---- rotação das telas (signature) ---- */
+  var slots = Array.prototype.slice.call(document.querySelectorAll(".slot"));
+  var tabs  = Array.prototype.slice.call(document.querySelectorAll(".tv-tabs button"));
+  var prog  = document.getElementById("prog");
+  var cur = 0, timer = null;
+  var DURATION = 5000;
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function show(i){
+    cur = i;
+    slots.forEach(function(s,k){ s.classList.toggle("on", k===i); });
+    tabs.forEach(function(t,k){ t.setAttribute("aria-selected", k===i ? "true":"false"); });
+    if(reduced) return;
+    prog.style.transition = "none";
+    prog.style.width = "0%";
+    void prog.offsetWidth;
+    prog.style.transition = "width "+DURATION+"ms linear";
+    prog.style.width = "100%";
+  }
+  function play(){
+    if(reduced) return;
+    clearInterval(timer);
+    timer = setInterval(function(){ show((cur+1) % slots.length); }, DURATION);
+  }
+  tabs.forEach(function(t,k){
+    t.addEventListener("click", function(){ show(k); play(); });
+  });
+  show(0); play();
+
+  /* ---- gráfico de custo acumulado ---- */
+  (function chart(){
+    var MONTHLY = 89, ANNUAL = 349, MONTHS = 24;
+    var W=520,H=300, PL=44,PR=52,PT=18,PB=30;
+    var a=[], b=[], acc=0, lic=0;
+    for(var m=0;m<=MONTHS;m++){
+      acc = MONTHLY*m;
+      lic = ANNUAL * (Math.floor((m===0?0:m-1)/12)+ (m===0?0:1));
+      if(m===0) lic = 0;
+      else lic = ANNUAL * (Math.floor((m-1)/12)+1);
+      a.push(acc); b.push(lic);
+    }
+    var max = Math.max.apply(null,a) * 1.08;
+    function X(i){ return PL + (i/MONTHS)*(W-PL-PR); }
+    function Y(v){ return H-PB - (v/max)*(H-PT-PB); }
+
+    var grid="", labels="";
+    [0,1,2,3,4].forEach(function(k){
+      var v = max*k/4, y = Y(v);
+      grid += '<line x1="'+PL+'" y1="'+y+'" x2="'+(W-PR)+'" y2="'+y+'" opacity="'+(k===0?1:.45)+'"/>';
+      labels += '<text x="'+(PL-8)+'" y="'+(y+3.5)+'" text-anchor="end">'+Math.round(v/100)*100+'</text>';
+    });
+    [0,6,12,18,24].forEach(function(m){
+      labels += '<text x="'+X(m)+'" y="'+(H-PB+18)+'" text-anchor="middle">'+(m===0?"0":m+"m")+'</text>';
+    });
+    document.getElementById("chart-grid").innerHTML = grid;
+    document.getElementById("chart-labels").innerHTML = labels;
+    document.getElementById("line-a").setAttribute("points", a.map(function(v,i){return X(i)+","+Y(v);}).join(" "));
+    document.getElementById("line-b").setAttribute("points", b.map(function(v,i){return X(i)+","+Y(v);}).join(" "));
+    document.getElementById("chart-end").innerHTML =
+      '<text x="'+(X(MONTHS)+6)+'" y="'+(Y(a[MONTHS])+4)+'" fill="#FF5A52">R$'+a[MONTHS].toLocaleString("pt-BR")+'</text>'+
+      '<text x="'+(X(MONTHS)+6)+'" y="'+(Y(b[MONTHS])+4)+'" fill="#5B8CFF">R$'+b[MONTHS].toLocaleString("pt-BR")+'</text>';
+  })();
+
+  /* ---- reveal ---- */
+  var els = document.querySelectorAll(".rv");
+  if("IntersectionObserver" in window && !reduced){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); }
+      });
+    },{threshold:.12, rootMargin:"0px 0px -40px 0px"});
+    els.forEach(function(el,i){ el.style.transitionDelay = (i%6)*45+"ms"; io.observe(el); });
+  } else {
+    els.forEach(function(el){ el.classList.add("in"); });
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# dependências e build
+node_modules/
+cms-admin/dist/
+
+# dados de produção: clientes, senhas, mídias dos clientes
+cms-backend/cms.db
+cms-backend/cms.db-*
+cms-backend/uploads/*
+!cms-backend/uploads/.gitkeep
+cms-backend/backups/
+cms-backend/logs/
+
+# segredos
+cms-backend/.jwt-secret
+cms-backend/config.json
+.env
+.env.*
+
+# estado do servidor em execução
+cms-backend/.em-execucao
+
+# cópias antigas e pacotes (a v1 contém um banco de dados)
+_backup-v1/
+*.zip
+
+# sistema / editor
+Thumbs.db
+.DS_Store
+.vscode/

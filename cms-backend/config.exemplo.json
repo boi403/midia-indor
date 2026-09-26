@@ -1,0 +1,21 @@
+{
+  "nome": "CMS Mídia Indoor",
+  "telegram": {
+    "token": "",
+    "chat_id": ""
+  },
+  "alertas": {
+    "tv_offline_minutos": 5,
+    "tv_voltou": true,
+    "disco_minimo_gb": 5,
+    "resumo_diario_hora": 8
+  },
+  "backup": {
+    "hora": 3,
+    "manter_dias": 14,
+    "pasta": "",
+    "copia_extra": "",
+    "copiar_uploads": false
+  },
+  "healthchecks_url": ""
+}

@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws: wss: http://localhost:3000 ws://localhost:3000 https://api.open-meteo.com https://economia.awesomeapi.com.br https://query1.finance.yahoo.com; img-src 'self' data: blob: http://localhost:3000 http://localhost:8080 http://*; media-src 'self' blob: http://localhost:3000 http://localhost:8080 http://*; frame-src http://localhost:3000 http://localhost:8080 http://*;">
+<title>Player — Sinalização Digital</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand:#0E4C68;
+  --accent:#C9A227;
+  --ink:#070B10;
+  --bone:#F3F1EC;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#000;color:var(--bone);
+  font-family:"IBM Plex Sans",system-ui,sans-serif;cursor:none;
+  -webkit-font-smoothing:antialiased;user-select:none}
+#stage{position:fixed;top:0;right:0;bottom:0;left:0}
+/* TV montada na vertical com a saída de vídeo na horizontal (ou vice-versa):
+   o palco é girado 90° e as medidas --vw/--vh passam a ser as do palco. */
+#stage.rot{right:auto;bottom:auto;top:0;left:0;width:100vh;height:100vw;transform:translateX(100vw) rotate(90deg);transform-origin:0 0}
+.zone{position:absolute;overflow:hidden}
+
+/* ---------- zona principal ---------- */
+#z-main{background:#05080C}
+.item{position:absolute;top:0;right:0;bottom:0;left:0;opacity:0;transition:opacity .6s ease}
+.item.on{opacity:1}
+.item video,.item img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* slides construídos em DOM (demo / peças geradas no painel) */
+.slide{width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;
+  padding:calc(6*var(--vh,1vh)) calc(6*var(--vw,1vw));position:relative}
+.slide .kick{font-family:"IBM Plex Mono",monospace;font-size:calc(1.1*var(--vw,1vw));letter-spacing:.28em;
+  text-transform:uppercase;opacity:.75;margin-bottom:calc(2.4*var(--vh,1vh))}
+.slide h1{font-family:"Archivo";font-weight:900;font-size:calc(5.2*var(--vw,1vw));line-height:.96;
+  letter-spacing:-.03em;text-wrap:balance}
+.slide h1 em{font-style:normal;color:var(--accent)}
+.slide p{font-size:calc(1.7*var(--vw,1vw));margin-top:calc(2.4*var(--vh,1vh));max-width:34ch;opacity:.85;line-height:1.45}
+.slide .rule{width:calc(9*var(--vw,1vw));height:4px;background:var(--accent);margin-bottom:calc(3*var(--vh,1vh))}
+.slide.institucional{background:
+  radial-gradient(120% 90% at 15% 10%,#14607E 0%,#0A2E42 45%,#05141E 100%)}
+.slide.promo{background:linear-gradient(140deg,#1A1206 0%,#0C0904 100%)}
+.slide.aviso{background:linear-gradient(140deg,#0A2018 0%,#050F0B 100%)}
+.slide.cardapio{background:linear-gradient(140deg,#1B0E10 0%,#0A0507 100%);justify-content:center}
+.menu-row{display:flex;justify-content:space-between;align-items:baseline;gap:calc(2*var(--vw,1vw));
+  padding:calc(1.5*var(--vh,1vh)) 0;border-bottom:1px dashed rgba(201,162,39,.28)}
+.menu-row b{font-family:"Archivo";font-weight:700;font-size:calc(2.2*var(--vw,1vw))}
+.menu-row span{font-family:"IBM Plex Mono",monospace;font-size:calc(2*var(--vw,1vw));color:var(--accent)}
+
+/* widget QR em tela cheia */
+.slide.qr{background:linear-gradient(140deg,#0E1B24,#050A0E);
+  flex-direction:row;align-items:center;gap:calc(5*var(--vw,1vw));justify-content:center}
+.qrbox{background:#fff;padding:calc(2*var(--vw,1vw));border-radius:calc(1*var(--vw,1vw));line-height:0}
+.qrbox img,.qrbox canvas{width:calc(20*var(--vw,1vw));height:calc(20*var(--vw,1vw));display:block}
+
+/* barra de progresso do item */
+#itemprog{position:absolute;left:0;bottom:0;height:4px;background:var(--accent);width:0;z-index:5}
+
+/* ---------- zona lateral ---------- */
+#z-side{background:#0B1219;border-left:1px solid rgba(255,255,255,.07);
+  display:flex;flex-direction:column;padding:calc(2.5*var(--vh,1vh)) calc(1.8*var(--vw,1vw));gap:calc(2*var(--vh,1vh));overflow:hidden}
+.logo{font-family:"Archivo";font-weight:900;font-size:calc(1.6*var(--vw,1vw));letter-spacing:-.02em;line-height:1.1}
+.logo small{display:block;font-family:"IBM Plex Mono",monospace;font-size:calc(.72*var(--vw,1vw));
+  letter-spacing:.24em;opacity:.55;font-weight:400;margin-top:calc(.6*var(--vh,1vh))}
+.clock{font-family:"Archivo";font-weight:900;font-size:calc(4.6*var(--vw,1vw));letter-spacing:-.04em;
+  line-height:.9;font-variant-numeric:tabular-nums}
+.date{font-family:"IBM Plex Mono",monospace;font-size:calc(.82*var(--vw,1vw));letter-spacing:.16em;
+  text-transform:uppercase;opacity:.6;margin-top:calc(.8*var(--vh,1vh))}
+
+/* widget de tempo expandido */
+.wx-card{border-top:1px solid rgba(255,255,255,.08);padding-top:calc(2*var(--vh,1vh))}
+.wx-city{font-family:"IBM Plex Mono",monospace;font-size:calc(.78*var(--vw,1vw));letter-spacing:.2em;
+  text-transform:uppercase;opacity:.55;margin-bottom:calc(.5*var(--vh,1vh))}
+.wx-main{display:flex;align-items:flex-end;gap:calc(1*var(--vw,1vw))}
+.wx-temp{font-family:"Archivo";font-weight:900;font-size:calc(3.8*var(--vw,1vw));color:var(--accent);line-height:1}
+.wx-desc{font-size:calc(.95*var(--vw,1vw));opacity:.85;line-height:1.3}
+.wx-minmax{font-size:calc(.78*var(--vw,1vw));opacity:.55;margin-top:calc(.3*var(--vh,1vh));font-family:"IBM Plex Mono",monospace}
+.wx-hourly{display:flex;gap:calc(.5*var(--vw,1vw));margin-top:calc(1.5*var(--vh,1vh));overflow:hidden}
+.wx-hour{display:flex;flex-direction:column;align-items:center;gap:calc(.3*var(--vh,1vh));flex:1;min-width:0}
+.wx-hour .wh-time{font-family:"IBM Plex Mono",monospace;font-size:calc(.62*var(--vw,1vw));opacity:.5;white-space:nowrap}
+.wx-hour .wh-icon{font-size:calc(1.4*var(--vw,1vw));line-height:1}
+.wx-hour .wh-temp{font-family:"Archivo";font-weight:700;font-size:calc(.75*var(--vw,1vw));color:var(--accent)}
+
+.notices{border-top:1px solid rgba(255,255,255,.08);padding-top:calc(2*var(--vh,1vh));margin-top:auto}
+.notices h4{font-family:"IBM Plex Mono",monospace;font-size:calc(.72*var(--vw,1vw));letter-spacing:.24em;
+  text-transform:uppercase;opacity:.5;font-weight:400;margin-bottom:calc(1.6*var(--vh,1vh))}
+.notices li{list-style:none;font-size:calc(1*var(--vw,1vw));line-height:1.45;padding:calc(.9*var(--vh,1vh)) 0;
+  border-bottom:1px solid rgba(255,255,255,.05);opacity:.9}
+
+/* ---------- cards de notícias ---------- */
+#news-feed-widget{flex:1;overflow:hidden;display:flex;flex-direction:column;margin-top:calc(0.5*var(--vh,1vh))}
+.nf-title{font-family:"IBM Plex Mono",monospace;font-size:calc(.68*var(--vw,1vw));letter-spacing:.2em;
+  text-transform:uppercase;opacity:.4;margin-bottom:calc(.8*var(--vh,1vh))}
+.nf-scroll{flex:1;overflow:hidden;position:relative}
+.nf-inner{position:absolute;top:0;left:0;right:0;will-change:transform}
+.nf-card{padding:calc(0.8*var(--vh,1vh)) 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:default}
+.nf-card:last-child{border-bottom:none}
+.nf-card-img{width:100%;height:calc(5.5*var(--vh,1vh));object-fit:cover;border-radius:4px;margin-bottom:calc(0.5*var(--vh,1vh));display:block}
+.nf-card-ttl{font-size:calc(.78*var(--vw,1vw));font-weight:600;line-height:1.3;opacity:.9}
+.nf-card-dsc{font-size:calc(.68*var(--vw,1vw));opacity:.45;line-height:1.3;margin-top:calc(.3*var(--vh,1vh));
+  display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* ---------- ticker ---------- */
+#z-ticker{background:var(--brand);display:flex;align-items:center;overflow:hidden;z-index:10;border-top:2px solid rgba(255,255,255,.15)}
+#z-ticker .tag{background:var(--accent);color:#1A1405;height:100%;display:flex;align-items:center;
+  padding:0 calc(1.6*var(--vw,1vw));font-family:"IBM Plex Mono",monospace;font-size:calc(.85*var(--vw,1vw));letter-spacing:.2em;
+  text-transform:uppercase;flex:none}
+.tk-track{display:flex;white-space:nowrap;will-change:transform}
+.tk-track span{font-size:calc(1.15*var(--vw,1vw));padding-inline:calc(2.2*var(--vw,1vw));opacity:.95}
+.tk-track span::after{content:"◆";margin-left:calc(2.2*var(--vw,1vw));color:var(--accent);font-size:calc(.7*var(--vw,1vw));vertical-align:middle}
+
+/* ---------- finance ---------- */
+#z-finance{background:#0a0a0a;display:flex;align-items:center;overflow:hidden;border-top:1px solid #222;z-index:11}
+#z-finance .tag{background:#181818;color:#aaa;height:100%;display:flex;align-items:center;
+  padding:0 calc(1.6*var(--vw,1vw));font-family:"IBM Plex Mono",monospace;font-size:calc(.75*var(--vw,1vw));letter-spacing:.2em;
+  text-transform:uppercase;flex:none;border-right:1px solid #333}
+.fin-track{display:flex;white-space:nowrap;will-change:transform}
+.fin-track span{font-size:calc(1.05*var(--vw,1vw));padding-inline:calc(2*var(--vw,1vw));color:#e5e7eb;font-family:"IBM Plex Mono",monospace;}
+.fin-up{color:#4ADE80;margin-left:calc(0.5*var(--vw,1vw));}
+.fin-down{color:#F87171;margin-left:calc(0.5*var(--vw,1vw));}
+
+/* ---------- câmera ---------- */
+.camera-slide{position:relative;width:100%;height:100%;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.camera-slide img{width:100%;height:100%;object-fit:cover;}
+.camera-slide .cam-label{position:absolute;top:0;left:0;background:rgba(0,0,0,.65);color:#fff;
+  font-family:"IBM Plex Mono",monospace;font-size:calc(1*var(--vw,1vw));padding:calc(0.5*var(--vh,1vh)) calc(1*var(--vw,1vw));
+  letter-spacing:.15em;text-transform:uppercase;border-bottom-right-radius:6px;}
+.camera-slide .cam-live{position:absolute;top:calc(0.8*var(--vh,1vh));right:calc(1*var(--vw,1vw));display:flex;align-items:center;gap:calc(0.5*var(--vw,1vw));}
+.camera-slide .cam-live i{width:calc(0.7*var(--vw,1vw));height:calc(0.7*var(--vw,1vw));border-radius:50%;background:#F87171;animation:blink 1s infinite;}
+.camera-slide .cam-live span{color:#fff;font-family:"IBM Plex Mono",monospace;font-size:calc(0.8*var(--vw,1vw));}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
+
+/* ---------- notícias em tela cheia (item "news" da playlist) ---------- */
+.slide.news{background:linear-gradient(140deg,#0B1824 0%,#05090D 100%)}
+.slide.news ul{list-style:none;margin-top:calc(2*var(--vh,1vh))}
+.slide.news li{font-family:"Archivo";font-weight:700;font-size:calc(2.4*var(--vw,1vw));line-height:1.25;
+  padding:calc(1.6*var(--vh,1vh)) 0;border-bottom:1px solid rgba(255,255,255,.08)}
+.slide.news li::before{content:"◆";color:var(--accent);font-size:.6em;margin-right:1em;vertical-align:middle}
+
+/* ---------- TV bloqueada / serviço suspenso ---------- */
+#blocked{position:fixed;top:0;right:0;bottom:0;left:0;background:#05080C;display:none;flex-direction:column;align-items:center;
+  justify-content:center;gap:2vh;z-index:910;text-align:center;padding:4vw}
+#blocked h2{font-family:"Archivo";font-weight:900;font-size:4vw;color:var(--accent)}
+#blocked p{opacity:.7;font-size:1.6vw;max-width:40ch}
+
+/* ---------- pareamento ---------- */
+#pair{position:fixed;top:0;right:0;bottom:0;left:0;background:#05080C;display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:calc(3*var(--vh,1vh));z-index:900}
+#pair .code{font-family:"IBM Plex Mono",monospace;font-size:7vw;font-size:min(7vw,11vh);letter-spacing:.08em;white-space:nowrap;
+  color:var(--accent);font-weight:500}
+#pair p{opacity:.65;font-size:calc(1.4*var(--vw,1vw));text-align:center;max-width:40ch}
+
+/* ---------- diagnóstico (tecla D) ---------- */
+#diag{position:fixed;right:0;top:0;width:340px;max-width:calc(60*var(--vw,1vw));background:rgba(5,8,12,.94);
+  border-left:1px solid #223040;padding:16px;font-family:"IBM Plex Mono",monospace;font-size:11px;
+  line-height:1.7;z-index:950;display:none;color:#9FB3C8}
+#diag b{color:#F3F1EC;font-weight:500}
+#diag h5{color:var(--accent);letter-spacing:.18em;text-transform:uppercase;font-size:9.5px;
+  margin:12px 0 6px;font-weight:500}
+#diag h5:first-child{margin-top:0}
+.pill{display:inline-block;padding:1px 6px;border-radius:3px;font-size:9.5px}
+.ok{background:#12351F;color:#4ADE80}.bad{background:#3A1414;color:#F87171}.wait{background:#3A3312;color:#FBBF24}
+
+/* offline */
+#offline{position:fixed;left:16px;bottom:16px;z-index:940;display:none;align-items:center;gap:8px;
+  background:rgba(120,20,20,.9);padding:7px 12px;border-radius:6px;
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.1em}
+#offline i{width:7px;height:7px;border-radius:50%;background:#F87171;display:block}
+
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<div id="stage"></div>
+
+<div id="pair">
+  <p style="letter-spacing:.3em;font-size:calc(1*var(--vw,1vw));text-transform:uppercase;opacity:.5">Código de ativação</p>
+  <div class="code" id="pair-code">TV-····-····</div>
+  <p>No painel administrativo, abra <b>Dispositivos → Adicionar dispositivo</b> e digite este código. A tela entra no ar assim que for vinculada.</p>
+</div>
+
+<div id="blocked"><h2 id="blocked-title">TV bloqueada</h2><p id="blocked-msg"></p></div>
+
+<div id="offline"><i></i><span>SEM CONEXÃO — EXIBINDO CACHE</span></div>
+<div id="diag"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+"use strict";
+/* =========================================================================
+   PLAYER DE SINALIZAÇÃO DIGITAL
+   Roda em WebView Android (shell Kotlin) ou no navegador da Smart TV.
+   Sem dependências além do gerador de QR — em produção, empacote local.
+   ========================================================================= */
+
+// Servido pelo próprio servidor (http://IP:3000/tv), usa a mesma origem —
+// assim a TV funciona em qualquer máquina da rede, não só em localhost.
+var ORIGIN = /^https?:$/.test(location.protocol) ? location.origin : "http://localhost:3000";
+var QS = new URLSearchParams(location.search);
+var CONFIG = {
+  API_BASE:        ORIGIN + "/v1",
+  API_ROOT:        ORIGIN, // rotas do painel (/api/...), fora do namespace /v1 do player
+  APP_VERSION:     "2.0.0",
+  DEMO:            false,
+  HEARTBEAT_S:     20,     // substituído por manifest.policy.heartbeat_s
+  MANIFEST_POLL_S: 60,     // o WebSocket avisa na hora; o poll é só a rede de segurança
+  WS_ENABLED:      true,
+  // /tv?preview=pv_... → preview dentro do painel: lê o manifesto de uma TV
+  // sem registrar presença nem proof-of-play.
+  PREVIEW:         QS.get("preview") || null,
+  // /player-app/signage-player.html é o endereço das TVs da v1, que nunca
+  // parearam: elas continuam entrando com o token fixo "dev_local".
+  LEGACY:          location.pathname.indexOf("/player-app/") >= 0
+};
+
+/* ---------- sanitização (mitigação de XSS) ---------- */
+function sanitize(str) {
+  if (!str) return "";
+  var div = document.createElement("div");
+  div.textContent = str;
+  var safe = div.innerHTML;
+  return safe.replace(/&lt;(br\s*\/?|\/?em|\/?b|\/?strong|\/?i)&gt;/gi, function(m, tag) {
+    return '<' + tag + '>';
+  });
+}
+
+function escapeAttr(str) {
+  if (!str) return "";
+  return String(str).replace(/[&<>"']/g, function(m) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
+  });
+}
+
+/* ---------- armazenamento tolerante a falha ---------- */
+var Store = (function(){
+  var mem = {};
+  function ok(){ try{ window.localStorage.setItem("__t","1"); window.localStorage.removeItem("__t"); return true; }catch(e){ return false; } }
+  var native = ok();
+  return {
+    get: function(k){ try{ return native ? localStorage.getItem(k) : (mem[k]||null); }catch(e){ return mem[k]||null; } },
+    set: function(k,v){ try{ native ? localStorage.setItem(k,v) : (mem[k]=v); }catch(e){ mem[k]=v; } },
+    del: function(k){ try{ native ? localStorage.removeItem(k) : delete mem[k]; }catch(e){ delete mem[k]; } }
+  };
+})();
+
+/* ---------- estado ---------- */
+var S = {
+  token: CONFIG.PREVIEW || Store.get("device_token") || (CONFIG.LEGACY ? "dev_local" : null),
+  manifest: null,
+  orientation: null,    // orientação efetiva em uso (landscape | portrait)
+  paused: false,
+  hbTimer: null,
+  hbEvery: 0,
+  revision: 0,
+  playlist: null,
+  index: -1,
+  itemTimer: null,
+  online: true,
+  ws: null,
+  wsBackoff: 1000,
+  queue: [],            // proof-of-play pendente
+  errors: [],
+  bootAt: Date.now()
+};
+
+/* =========================================================================
+   1. MANIFESTO DEMO — espelha exatamente o contrato de §4
+   ========================================================================= */
+var DEMO_MANIFEST = {
+  revision: 48,
+  device: { id:"demo", name:"TV Recepção", group:"Recepção",
+            orientation:"landscape", timezone:"America/Cuiaba" },
+  branding: { name:"Araguaia Palace", tagline:"HOTEL", primary:"#0E4C68", accent:"#C9A227" },
+  layout: { id:"padrao", zones:[
+    { id:"main",   x:0,  y:0,  w:73,  h:88, role:"playlist" },
+    { id:"side",   x:73, y:0,  w:27,  h:88, role:"widgets"  },
+    { id:"ticker", x:0,  y:88, w:100, h:12, role:"ticker"   }
+  ]},
+  playlists: [
+    { id:"pl-dia", name:"Recepção — dia", items:[
+      { id:"i1", type:"slide", duration_ms:9000, slide:{ variant:"institucional",
+        kick:"Bem-vindo", title:"Sua estadia começa <em>agora</em>.",
+        text:"Recepção 24 horas. Qualquer necessidade, é só chamar — ramal 9." } },
+      { id:"i2", type:"slide", duration_ms:8000, slide:{ variant:"promo",
+        kick:"Promoção · até 31/08", title:"Segunda diária com <em>30% off</em>",
+        text:"Válido para reservas feitas diretamente na recepção." },
+        window:{ from:"2026-08-01", to:"2026-08-31" } },
+      { id:"i3", type:"widget", widget:"qrcode", duration_ms:10000,
+        config:{ data:"WIFI:T:WPA;S:Araguaia_Hospedes;P:bemvindo2026;;",
+                 title:"Wi-Fi dos hóspedes", caption:"Aponte a câmera para conectar" } },
+      { id:"i4", type:"slide", duration_ms:8000, slide:{ variant:"aviso",
+        kick:"Café da manhã", title:"6h às 10h<br>no <em>salão térreo</em>",
+        text:"Aos domingos, servido até as 10h30." } }
+    ]},
+    { id:"pl-cafe", name:"Café da manhã", items:[
+      { id:"c1", type:"slide", duration_ms:12000, slide:{ variant:"cardapio", menu:[
+        ["Pães e bolos da casa","à vontade"],["Ovos mexidos e omelete","até 9h30"],
+        ["Frutas da estação","à vontade"],["Café, leite e sucos","à vontade"]
+      ], kick:"Cardápio de hoje" } },
+      { id:"c2", type:"slide", duration_ms:8000, slide:{ variant:"aviso",
+        kick:"Aviso", title:"Check-out até as <em>12h</em>",
+        text:"Precisa de late check-out? Consulte a recepção." } }
+    ]}
+  ],
+  schedule: [
+    { playlist_id:"pl-cafe", priority:10, days:[0,1,2,3,4,5,6], from:"06:00", to:"10:30" },
+    { playlist_id:"pl-dia",  priority:0,  days:[0,1,2,3,4,5,6], from:"00:00", to:"23:59" }
+  ],
+  widgets: {
+    clock:   { enabled:true },
+    weather: { enabled:true, lat:-20.42, lon:-51.34 },
+    ticker:  { enabled:true, speed:55, notices:[
+      "Café da manhã das 6h às 10h no salão térreo",
+      "Check-out até as 12h",
+      "Wi-Fi liberado em todas as áreas comuns",
+      "Estacionamento coberto sem custo adicional",
+      "Lavanderia com entrega no mesmo dia até as 9h"
+    ]},
+    notices: { enabled:true, title:"Avisos", items:[
+      "Piscina aberta das 8h às 20h",
+      "Academia 24h — chave na recepção",
+      "Restaurante: jantar das 19h às 22h30"
+    ]}
+  },
+  precache: [],
+  policy: { heartbeat_s:60, manifest_poll_s:300, reboot_daily_at:"04:30" }
+};
+
+/* =========================================================================
+   2. RENDERIZAÇÃO DAS ZONAS
+   ========================================================================= */
+/* ---------- orientação ----------
+   "auto": segue a proporção da tela (largura > altura → horizontal).
+   Manual (horizontal/vertical): se a tela física estiver no outro sentido —
+   TV girada na parede com a saída de vídeo sem girar — o palco gira 90°. */
+function viewportOrientation(){ return window.innerWidth >= window.innerHeight ? "landscape" : "portrait"; }
+function targetOrientation(m){
+  var o = m && m.device && m.device.orientation;
+  return (o === "landscape" || o === "portrait") ? o : viewportOrientation();
+}
+function layoutFor(m, o){
+  return (m.layouts && m.layouts[o]) ? { id: "layout-" + o, zones: m.layouts[o] } : m.layout;
+}
+function sizeStage(){
+  var stage = document.getElementById("stage");
+  var rot = !!S.orientation && S.orientation !== viewportOrientation();
+  stage.classList.toggle("rot", rot);
+  var w = rot ? window.innerHeight : window.innerWidth;
+  var h = rot ? window.innerWidth : window.innerHeight;
+  stage.style.setProperty("--vw", (w / 100) + "px");
+  stage.style.setProperty("--vh", (h / 100) + "px");
+}
+// brilho (filtro CSS — o player web não controla o backlight) e volume dos vídeos
+function applyDisplay(m){
+  var d = (m && m.device) || {};
+  var b = d.brightness == null ? 100 : d.brightness;
+  document.getElementById("stage").style.filter = b < 100 ? "brightness(" + (b / 100) + ")" : "";
+  Array.prototype.forEach.call(document.querySelectorAll("#stage video"), setVolume);
+}
+function setVolume(v){
+  var vol = (S.manifest && S.manifest.device && S.manifest.device.volume) || 0;
+  v.volume = Math.min(1, vol / 100);
+  v.muted = vol <= 0;
+}
+
+function buildStage(m){
+  var stage = document.getElementById("stage");
+  stage.innerHTML = "";
+  document.documentElement.style.setProperty("--brand", m.branding.primary || "#0E4C68");
+  document.documentElement.style.setProperty("--accent", m.branding.accent || "#C9A227");
+  S.orientation = targetOrientation(m);
+  sizeStage();
+  var layout = layoutFor(m, S.orientation);
+  S.layoutSig = JSON.stringify(layout);
+
+  layout.zones.forEach(function(z){
+    var el = document.createElement("div");
+    el.className = "zone";
+    el.id = "z-" + z.id;
+    el.style.left   = z.x + "%";
+    el.style.top    = z.y + "%";
+    el.style.width  = z.w + "%";
+    el.style.height = z.h + "%";
+    stage.appendChild(el);
+
+    if(z.role === "playlist"){
+      el.innerHTML = '<div id="itemprog"></div>';
+    } else if(z.role === "widgets"){
+      renderSide(el, m);
+    } else if(z.role === "ticker"){
+      renderTicker(el, m);
+    } else if(z.role === "finance"){
+      renderFinance(el, m);
+    }
+  });
+}
+
+function renderSide(el, m){
+  var w = m.widgets || {};
+  var sig = JSON.stringify([m.branding.logo_url, m.branding.name, m.branding.tagline,
+    w.clock && w.clock.enabled, w.weather && w.weather.enabled, w.notices]);
+
+  // Não mudou: preserva o DOM para não resetar o relógio/tempo já carregados
+  // a cada novo manifesto (ex.: a cada poll de 15s), o que os deixava
+  // travados em "--:--" / "carregando…" indefinidamente.
+  if(el.dataset.sig === sig) return;
+  el.dataset.sig = sig;
+
+  var logoHtml = m.branding.logo_url ? '<img src="' + m.branding.logo_url + '" style="max-width:80%;max-height:calc(8*var(--vh,1vh));display:block;margin:0 auto calc(1*var(--vh,1vh));">' : '';
+  var html = '<div class="logo">' + logoHtml + sanitize(m.branding.name || "") +
+             '<small>' + sanitize(m.branding.tagline || "") + '</small></div>';
+  if(w.clock && w.clock.enabled){
+    html += '<div><div class="clock" id="wclock">--:--</div><div class="date" id="wdate"></div></div>';
+  }
+  if(w.weather && w.weather.enabled){
+    html += '<div class="wx-card" id="wx-card">' +
+            '<div class="wx-city" id="wx-city">Carregando…</div>' +
+            '<div class="wx-main">' +
+              '<div class="wx-temp" id="wtemp">—°</div>' +
+              '<div class="wx-info">' +
+                '<div class="wx-desc" id="wdesc">--</div>' +
+                '<div class="wx-minmax" id="wminmax"></div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="wx-hourly" id="wx-hourly"></div>' +
+            '</div>';
+  }
+  if(w.notices && w.notices.enabled){
+    html += '<div class="notices"><h4>' + sanitize(w.notices.title || "Avisos") + '</h4><ul>' +
+            w.notices.items.map(function(n){ return "<li>"+sanitize(n)+"</li>"; }).join("") +
+            '</ul></div>';
+  }
+  // Widget de Notícias RSS
+  html += '<div id="news-feed-widget" style="display:none">' +
+          '<div class="nf-title">Notícias</div>' +
+          '<div class="nf-scroll"><div class="nf-inner" id="nf-inner"></div></div>' +
+          '</div>';
+  el.innerHTML = html;
+  tickClock();
+  loadWeather();
+  loadNewsFeed();
+}
+
+var tickerRAF = null;
+function renderTicker(el, m){
+  var t = (m.widgets && m.widgets.ticker) || {};
+  if(!t.enabled){ el.style.display="none"; return; }
+  var items = (t.notices || []).map(function(n){ return "<span>"+sanitize(n)+"</span>"; }).join("");
+
+  if(el.dataset.items === items) return; // Não mudou, não reinicia a animação
+  el.dataset.items = items;
+
+  el.innerHTML = '<div class="tag">Informações</div>' +
+                 '<div class="scroll-container" style="flex:1;overflow:hidden;height:100%;display:flex;align-items:center;">' +
+                 '<div class="tk-track" id="tk">' + items + items + '</div>' +
+                 '</div>';
+  // animação por JS: sobrevive a mudança de conteúdo sem reiniciar o CSS
+  if(tickerRAF) cancelAnimationFrame(tickerRAF); // encerra o loop anterior antes de iniciar outro
+  var track = document.getElementById("tk"), x = 0, speed = (t.speed || 55);
+  var half = 0;
+  (function step(){
+    if(!half) half = track.scrollWidth / 2;
+    x -= speed / 60;
+    if(half && -x >= half) x += half;
+    track.style.transform = "translateX(" + x + "px)";
+    tickerRAF = requestAnimationFrame(step);
+  })();
+}
+
+var financeRAF = null;
+function renderFinance(el, m){
+  var f = (m.widgets && m.widgets.finance) || {};
+  if(!f.enabled || !f.quotes || !f.quotes.length){ el.style.display="none"; return; }
+  var items = f.quotes.map(function(q){
+    var isUp = q.changePct >= 0;
+    var arrow = isUp ? '▲' : '▼';
+    var colorClass = isUp ? 'fin-up' : 'fin-down';
+    return "<span>" + sanitize(q.symbol) + " " + sanitize(q.price) +
+           " <span class='" + colorClass + "'>(" + arrow + " " + sanitize(q.changePct) + "%)</span></span>";
+  }).join('<span style="color:#333;margin-inline:calc(1*var(--vw,1vw))">|</span>');
+
+  if(el.dataset.items === items) return; // Não mudou, não reinicia a animação
+  el.dataset.items = items;
+
+  el.innerHTML = '<div class="tag">MERCADOS</div>' +
+                 '<div class="scroll-container" style="flex:1;overflow:hidden;height:100%;display:flex;align-items:center;">' +
+                 '<div class="fin-track" id="fintk">' + items + '<span style="color:#333;margin-inline:calc(1*var(--vw,1vw))">|</span>' + items + '</div>' +
+                 '</div>';
+
+  if(financeRAF) cancelAnimationFrame(financeRAF); // encerra o loop anterior antes de iniciar outro
+  var track = document.getElementById("fintk"), x = 0, speed = (f.speed || 45);
+  var half = 0;
+  (function step(){
+    if(!half) half = track.scrollWidth / 2;
+    x -= speed / 60;
+    if(half && -x >= half) x += half;
+    track.style.transform = "translateX(" + x + "px)";
+    financeRAF = requestAnimationFrame(step);
+  })();
+}
+
+/* =========================================================================
+   3. AGENDAMENTO — qual playlist toca agora
+   ========================================================================= */
+function minutesNow(){ var d=new Date(); return d.getHours()*60 + d.getMinutes(); }
+function toMin(hhmm){ var p=hhmm.split(":"); return (+p[0])*60 + (+p[1]); }
+function pad2(n){ return (n < 10 ? "0" : "") + n; }
+// data/hora LOCAL da TV ("YYYY-MM-DD" / "YYYY-MM-DDTHH:MM") — toISOString()
+// daria a data em UTC, que vira o dia às 20h/21h no Brasil.
+function localDate(){ var d=new Date(); return d.getFullYear() + "-" + pad2(d.getMonth()+1) + "-" + pad2(d.getDate()); }
+function localStamp(){ var d=new Date(); return localDate() + "T" + pad2(d.getHours()) + ":" + pad2(d.getMinutes()); }
+function inHours(from, to){
+  var now = minutesNow(), a = toMin(from || "00:00"), b = toMin(to || "23:59");
+  return (a <= b) ? (now >= a && now <= b) : (now >= a || now <= b); // cruza meia-noite
+}
+
+function pickPlaylist(m){
+  var day = new Date().getDay(), stamp = localStamp(), best = null;
+  (m.schedule || []).forEach(function(s){
+    if(s.days.indexOf(day) < 0) return;
+    if(!inHours(s.from, s.to)) return;
+    // campanhas: período de datas (depois do fim, volta sozinho à playlist normal)
+    if(s.dates && ((s.dates.from && stamp < s.dates.from) || (s.dates.to && stamp >= s.dates.to))) return;
+    if(!best || s.priority > best.priority) best = s;
+  });
+  var id = best ? best.playlist_id : (m.playlists[0] && m.playlists[0].id);
+  return m.playlists.filter(function(p){ return p.id === id; })[0] || m.playlists[0];
+}
+
+function activeItems(pl){
+  var today = localDate();
+  return (pl.items || []).filter(function(it){
+    if(it.enabled === false) return false;
+    if(it.window){
+      if(it.window.from && today < it.window.from) return false;
+      if(it.window.to   && today > it.window.to)   return false;
+    }
+    if(it.hours && !inHours(it.hours.from, it.hours.to)) return false;
+    // conteúdo feito só para uma orientação não aparece esticado na outra
+    if(it.orientation && it.orientation !== "any" && S.orientation && it.orientation !== S.orientation) return false;
+    return true;
+  });
+}
+
+/* =========================================================================
+   4. LOOP DE REPRODUÇÃO
+   ========================================================================= */
+function playNext(){
+  var main = document.getElementById("z-main");
+  if(!main || !S.playlist || S.paused) return;
+  clearTimeout(S.itemTimer);
+
+  var items = activeItems(S.playlist);
+  if(!items.length){ S.itemTimer = setTimeout(playNext, 5000); return; }
+
+  S.index = (S.index + 1) % items.length;
+  var item = items[S.index];
+  var startedAt = new Date().toISOString();
+
+  var node = buildItem(item);
+  node.className = "item";
+  main.appendChild(node);
+  requestAnimationFrame(function(){ node.classList.add("on"); });
+
+  // remove os anteriores depois da transição
+  Array.prototype.slice.call(main.querySelectorAll(".item")).forEach(function(old){
+    if(old !== node) setTimeout(function(){ old.remove(); }, 700);
+  });
+
+  var dur = item.duration_ms || 10000;
+  var vid = node.querySelector("video");
+
+  function finish(completed){
+    logPlayback(item, startedAt, dur, completed !== false);
+    playNext();
+  }
+
+  if(vid){
+    setVolume(vid);
+    vid.play().catch(function(){
+      // autoplay com som bloqueado pelo navegador: tenta mudo; se falhar, cai no timer
+      if(!vid.muted){ vid.muted = true; vid.play().catch(function(){}); }
+    });
+    vid.onended = function(){ finish(true); };
+    vid.onerror = function(){ S.errors.push("video:"+item.id); finish(false); };
+    dur = (item.duration_ms || 0) || 30000;
+    progress(dur);
+    clearTimeout(S.itemTimer);
+    S.itemTimer = setTimeout(function(){ finish(true); }, dur + 2000);
+  } else {
+    progress(dur);
+    clearTimeout(S.itemTimer);
+    S.itemTimer = setTimeout(function(){ finish(true); }, dur);
+  }
+  renderDiag();
+}
+
+function progress(ms){
+  var p = document.getElementById("itemprog");
+  if(!p) return;
+  p.style.transition = "none"; p.style.width = "0%";
+  void p.offsetWidth;
+  p.style.transition = "width " + ms + "ms linear";
+  p.style.width = "100%";
+}
+
+function buildItem(item){
+  var d = document.createElement("div");
+
+  // arte específica para TV vertical, quando a campanha tiver uma
+  var usePortrait = item.portrait_url && S.orientation === "portrait";
+  var mediaType = usePortrait ? (item.portrait_type || item.type) : item.type;
+  var mediaUrl = usePortrait ? item.portrait_url : item.url;
+  if(mediaType === "video"){
+    d.innerHTML = '<video muted playsinline preload="auto" src="' + escapeAttr(mediaUrl) + '"></video>';
+    return d;
+  }
+  if(mediaType === "image"){
+    d.innerHTML = '<img alt="" src="' + escapeAttr(mediaUrl) + '">';
+    return d;
+  }
+  if(item.type === "news"){
+    var nc = item.config || {};
+    d.innerHTML = '<div class="slide news"><div class="kick">' + sanitize(nc.title || "Notícias") + '</div><div class="rule"></div><ul>' +
+      (nc.items || []).map(function(n){ return "<li>" + sanitize(n) + "</li>"; }).join("") + '</ul></div>';
+    return d;
+  }
+  if(item.type === "camera"){
+    // O backend converte o RTSP do DVR pra MJPEG (endpoint /api/cameras/:id/stream.mjpg)
+    // e manda essa URL já pronta aqui — o <img> exibe normalmente, sem WebSocket/canvas.
+    var cfg = item.config || {};
+    var camUrl = cfg.url || item.url || '';
+    var camLabel = cfg.label || 'Câmera';
+
+    d.innerHTML = '<div class="camera-slide">' +
+      '<img alt="camera">' +
+      '<div class="cam-label">' + sanitize(camLabel) + '</div>' +
+      '<div class="cam-live"><i></i><span>AO VIVO</span></div>' +
+      '</div>';
+
+    var img = d.querySelector("img");
+    // Reconecta com intervalo (evita martelar o proxy/DVR com tentativas sem
+    // limite quando a câmera está offline ou o ffmpeg ainda está conectando).
+    img.onerror = function(){
+      if(!img.isConnected) return; // item já saiu de cena: para de tentar
+      setTimeout(function(){
+        if(!img.isConnected) return;
+        img.src = camUrl + (camUrl.indexOf("?") === -1 ? "?" : "&") + "_r=" + Date.now();
+      }, 4000);
+    };
+    img.src = camUrl;
+
+    return d;
+  }
+  if(item.type === "widget" && item.widget === "qrcode"){
+    var c = item.config || {};
+    d.innerHTML =
+      '<div class="slide qr">' +
+        '<div><div class="rule"></div>' +
+          '<h1 style="font-size:calc(3.6*var(--vw,1vw))">' + sanitize(c.title || "Aponte a câmera") + '</h1>' +
+          '<p>' + sanitize(c.caption || "") + '</p></div>' +
+        '<div class="qrbox"></div>' +
+      '</div>';
+    var box = d.querySelector(".qrbox");
+    try{
+      new QRCode(box, { text: c.data || "", width: 420, height: 420,
+                        correctLevel: QRCode.CorrectLevel.M });
+    }catch(e){
+      box.innerHTML = '<div style="color:#000;font-family:monospace;padding:calc(2*var(--vw,1vw))">QR indisponível</div>';
+      S.errors.push("qr:lib");
+    }
+    return d;
+  }
+  // slide construído em DOM
+  var s = item.slide || {};
+  if(s.variant === "cardapio"){
+    d.innerHTML = '<div class="slide cardapio">' +
+      '<div class="kick">' + sanitize(s.kick || "") + '</div>' +
+      s.menu.map(function(r){
+        return '<div class="menu-row"><b>'+sanitize(r[0])+'</b><span>'+sanitize(r[1])+'</span></div>';
+      }).join("") + '</div>';
+    return d;
+  }
+  d.innerHTML = '<div class="slide ' + escapeAttr(s.variant || "institucional") + '">' +
+    (s.kick ? '<div class="kick">' + sanitize(s.kick) + '</div>' : '') +
+    '<div class="rule"></div>' +
+    '<h1>' + sanitize(s.title || "") + '</h1>' +
+    (s.text ? '<p>' + sanitize(s.text) + '</p>' : '') +
+  '</div>';
+  return d;
+}
+
+/* =========================================================================
+   5. PROOF OF PLAY
+   ========================================================================= */
+function logPlayback(item, startedAt, durationMs, completed){
+  if(CONFIG.PREVIEW) return;
+  S.queue.push({
+    asset_id: item.asset_id || item.id,
+    label: item.label || "",
+    playlist_id: S.playlist.id,
+    started_at: startedAt,
+    duration_ms: durationMs,
+    completed: !!completed
+  });
+  if(S.queue.length > 800) S.queue.splice(0, S.queue.length - 800);
+  try{ Store.set("pop_queue", JSON.stringify(S.queue)); }catch(e){}
+}
+
+function flushEvents(){
+  if(CONFIG.DEMO || !S.queue.length || !S.online) return;
+  var batch = S.queue.slice(0, 500);
+  api("POST", "/player/events", { events: batch }).then(function(){
+    S.queue = S.queue.slice(batch.length);
+    Store.set("pop_queue", JSON.stringify(S.queue));
+  }).catch(function(){ /* mantém na fila */ });
+}
+
+/* =========================================================================
+   6. REDE — manifesto, heartbeat, websocket, pareamento
+   ========================================================================= */
+function api(method, path, body){
+  var h = { "Content-Type":"application/json" };
+  if(S.token) h["Authorization"] = "Bearer " + S.token;
+  return fetch(CONFIG.API_BASE + path, {
+    method: method, headers: h, body: body ? JSON.stringify(body) : undefined
+  }).then(function(r){
+    if(r.status === 304) return { notModified:true };
+    if(r.status === 401 || r.status === 403){
+      return r.json().catch(function(){ return {}; }).then(function(j){
+        handleAuthError(r.status, j);
+        var e = new Error("HTTP " + r.status); e.auth = true; throw e;
+      });
+    }
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    hideBlocked();
+    return r.json();
+  });
+}
+
+// 401: o token deixou de valer (TV excluída no painel) → volta à ativação.
+// 403: TV bloqueada ou cliente inativo → tela de aviso, seguindo em contato
+// com o servidor para voltar sozinha quando for liberada.
+function handleAuthError(status, j){
+  if(status === 401 && !CONFIG.PREVIEW){
+    Store.del("device_token"); Store.del("manifest_cache");
+    S.token = null;
+    if(S.ws){ try{ S.ws.close(); }catch(e){} }
+    startPairing();
+  } else if(status === 403){
+    document.getElementById("blocked-title").textContent = j.error === "suspended" ? "Serviço suspenso" : "TV bloqueada";
+    document.getElementById("blocked-msg").textContent = j.message || "";
+    document.getElementById("blocked").style.display = "flex";
+    document.querySelectorAll("#stage video").forEach(function(v){ v.pause(); });
+  }
+}
+function hideBlocked(){
+  var b = document.getElementById("blocked");
+  if(b.style.display === "flex"){ b.style.display = "none"; }
+}
+
+function applyManifest(m){
+  var first = !S.manifest;
+  var layoutChanged = !first && (targetOrientation(m) !== S.orientation ||
+    JSON.stringify(layoutFor(m, targetOrientation(m))) !== S.layoutSig);
+  S.manifest = m;
+  S.revision = m.revision;
+  if(!CONFIG.PREVIEW) Store.set("manifest_cache", JSON.stringify(m));
+  scheduleHeartbeat((m.policy && m.policy.heartbeat_s) || CONFIG.HEARTBEAT_S);
+
+  if(first || layoutChanged) {
+    buildStage(m);
+  } else { 
+    document.documentElement.style.setProperty("--brand", m.branding.primary || "#0E4C68");
+    document.documentElement.style.setProperty("--accent", m.branding.accent || "#C9A227");
+    if(document.getElementById("z-side")) renderSide(document.getElementById("z-side"), m);
+    if(document.getElementById("z-ticker")) renderTicker(document.getElementById("z-ticker"), m);
+    if(document.getElementById("z-finance")) renderFinance(document.getElementById("z-finance"), m);
+  }
+  applyDisplay(m);
+  var pl = pickPlaylist(m);
+  if(!pl){ S.playlist = null; renderDiag(); return; }
+  if(!S.playlist || pl.id !== S.playlist.id || layoutChanged){
+    S.playlist = pl; S.index = -1;
+    clearTimeout(S.itemTimer);
+    playNext();
+  } else {
+    S.playlist = pl;
+  }
+  document.getElementById("pair").style.display = "none";
+  renderDiag();
+}
+
+function fetchManifest(){
+  if(CONFIG.DEMO || !S.token || S.pairing) return;
+  api("GET", "/player/manifest?revision=" + S.revision).then(function(m){
+    if(m.notModified) return;
+    setOnline(true);
+    // precache antes de aplicar: nunca troca de revisão com asset faltando
+    precache(m.precache || []).then(function(){ applyManifest(m); });
+  }).catch(function(e){ if(!e.auth) setOnline(false); });
+}
+
+function precache(list){
+  if(!list.length || !("caches" in window)) return Promise.resolve();
+  return caches.open("signage-v1").then(function(c){
+    return Promise.all(list.map(function(a){
+      return c.match(a.url).then(function(hit){ return hit ? null : c.add(a.url); });
+    }));
+  }).catch(function(){ return null; });
+}
+
+// Heartbeat: é por ele que o painel sabe se a TV está online, o que ela está
+// exibindo e em que orientação/resolução. Também traz comandos pendentes
+// quando o WebSocket não está conectado.
+function heartbeat(){
+  if(CONFIG.DEMO || !S.token || S.pairing) return;
+  // a lista de itens pode encolher entre o playNext() e este tick (ex.: câmera
+  // removida no painel) — não indexar direto para não derrubar o heartbeat
+  var curItem = S.playlist && S.index >= 0 ? (activeItems(S.playlist)[S.index] || null) : null;
+  var dpr = window.devicePixelRatio || 1;
+  api("POST", "/player/heartbeat", {
+    revision: S.revision,
+    uptime_s: Math.round((Date.now() - S.bootAt)/1000),
+    current_item: curItem ? curItem.id : null,
+    current_item_label: curItem ? (curItem.label || curItem.id) : null,
+    current_playlist: S.playlist ? S.playlist.name : null,
+    orientation: S.orientation || viewportOrientation(),
+    screen: { w: Math.round(screen.width * dpr), h: Math.round(screen.height * dpr) },
+    app_version: CONFIG.APP_VERSION,
+    errors: S.errors.splice(0, 10)
+  }).then(function(r){
+    setOnline(true);
+    if(r.revision && r.revision !== S.revision) fetchManifest();
+    (r.commands || []).forEach(runCommand);
+  }).catch(function(e){ if(!e.auth) setOnline(false); });
+}
+
+function scheduleHeartbeat(seconds){
+  if(S.hbEvery === seconds && S.hbTimer) return;
+  S.hbEvery = seconds;
+  clearInterval(S.hbTimer);
+  S.hbTimer = setInterval(heartbeat, seconds * 1000);
+}
+
+function runCommand(cmd){
+  switch(cmd.command){
+    case "reload":      location.reload(); break;
+    case "sync":        S.revision = 0; fetchManifest(); break;
+    case "next":        S.paused = false; playNext(); break;
+    case "pause":
+      S.paused = true; clearTimeout(S.itemTimer);
+      document.querySelectorAll("#stage video").forEach(function(v){ v.pause(); });
+      break;
+    case "play":        if(S.paused){ S.paused = false; playNext(); } break;
+    case "clear_cache": if("caches" in window) caches.delete("signage-v1").then(function(){ location.reload(); }); break;
+    case "reboot":      if(window.Shell && Shell.reboot) Shell.reboot(); else location.reload(); break;
+    case "update_app":  if(window.Shell && Shell.update) Shell.update(cmd.payload.apk_url); break;
+  }
+  renderDiag();
+  if(!CONFIG.DEMO && cmd.id) api("POST", "/player/commands/" + cmd.id + "/ack", { ok:true }).catch(function(){});
+}
+
+function connectWS(){
+  if(CONFIG.DEMO || CONFIG.PREVIEW || !CONFIG.WS_ENABLED || !S.token) return;
+  if(S.ws && S.ws.readyState <= 1) return;
+  var token = S.token;
+  var url = CONFIG.API_BASE.replace(/^http/, "ws").replace(/\/v1$/, "") + "/ws/device?token=" + encodeURIComponent(token);
+  try{ S.ws = new WebSocket(url); }catch(e){ return; }
+
+  S.ws.onopen = function(){
+    S.wsBackoff = 1000; setOnline(true);
+    S.ws.send(JSON.stringify({ type:"status", revision:S.revision, orientation:S.orientation, app_version:CONFIG.APP_VERSION }));
+  };
+  S.ws.onmessage = function(ev){
+    var msg; try{ msg = JSON.parse(ev.data); }catch(e){ return; }
+    if(msg.type === "manifest.updated" && msg.revision !== S.revision) fetchManifest();
+    if(msg.type === "command") runCommand(msg);
+    if(msg.type === "ping") S.ws.send(JSON.stringify({ type:"pong" }));
+  };
+  S.ws.onclose = function(){
+    if(S.token !== token) return; // TV foi desvinculada/re-pareada: não insiste no token velho
+    setTimeout(connectWS, S.wsBackoff + Math.random()*500);
+    S.wsBackoff = Math.min(S.wsBackoff * 2, 60000);
+  };
+}
+
+function setOnline(v){
+  S.online = v;
+  document.getElementById("offline").style.display = v ? "none" : "flex";
+  renderDiag();
+}
+
+function startPairing(){
+  if(S.pairing) return;
+  S.pairing = true;
+  document.getElementById("pair").style.display = "flex";
+  var hw = Store.get("hardware_id");
+  if(!hw){
+    var rnd = (window.crypto && crypto.getRandomValues) ? Array.prototype.map.call(crypto.getRandomValues(new Uint8Array(12)), function(b){ return b.toString(16); }).join("") : Math.random().toString(36).slice(2);
+    hw = "hw_" + rnd; Store.set("hardware_id", hw);
+  }
+  var dpr = window.devicePixelRatio || 1;
+
+  (function poll(){
+    api("POST", "/player/pair", {
+      hardware_id: hw,
+      screen: { w: Math.round(screen.width * dpr), h: Math.round(screen.height * dpr) },
+      app_version: CONFIG.APP_VERSION
+    }).then(function(r){
+      if(r.device_token){
+        S.pairing = false;
+        S.token = r.device_token;
+        S.revision = 0;
+        Store.set("device_token", S.token);
+        document.getElementById("pair").style.display = "none";
+        connectWS(); fetchManifest(); heartbeat();
+        return;
+      }
+      document.getElementById("pair-code").textContent = r.pairing_code || "TV-····-····";
+      setTimeout(poll, r.poll_after_ms || 5000);
+    }).catch(function(){ setTimeout(poll, 10000); });
+  })();
+}
+
+/* =========================================================================
+   7. WIDGETS DE APOIO
+   ========================================================================= */
+var DIAS = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+var MESES = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+
+function tickClock(){
+  var c = document.getElementById("wclock");
+  if(!c) return;
+  var d = new Date();
+  c.textContent = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+  var dt = document.getElementById("wdate");
+  if(dt) dt.textContent = DIAS[d.getDay()] + " · " + d.getDate() + " " + MESES[d.getMonth()];
+}
+
+function loadWeather(){
+  var w = S.manifest && S.manifest.widgets && S.manifest.widgets.weather;
+  if(!w || !w.enabled) return;
+  var t = document.getElementById("wtemp");
+  if(!t) return;
+
+  var url = "https://api.open-meteo.com/v1/forecast?latitude=" + w.lat + "&longitude=" + w.lon +
+    "&current=temperature_2m,weather_code" +
+    "&daily=temperature_2m_max,temperature_2m_min" +
+    "&hourly=temperature_2m,weather_code" +
+    "&timezone=auto&forecast_days=1";
+
+  fetch(url)
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      var cur = j.current;
+      var daily = j.daily;
+      var hourly = j.hourly;
+
+      var temp = Math.round(cur.temperature_2m);
+      var desc = wxLabel(cur.weather_code);
+      var maxT = daily && daily.temperature_2m_max ? Math.round(daily.temperature_2m_max[0]) : '--';
+      var minT = daily && daily.temperature_2m_min ? Math.round(daily.temperature_2m_min[0]) : '--';
+
+      // Atualiza temperatura e descrição
+      var tel = document.getElementById("wtemp");
+      var dsc = document.getElementById("wdesc");
+      var mm  = document.getElementById("wminmax");
+      var cit = document.getElementById("wx-city");
+      if(tel) tel.textContent = temp + "°";
+      if(dsc) dsc.textContent = desc;
+      if(mm)  mm.textContent  = "Máx.: " + maxT + "°   Mín.: " + minT + "°";
+      if(cit) cit.textContent = w.city || "";
+
+      // Previsão horária: próximas 6 horas a partir da atual
+      var hourlyEl = document.getElementById("wx-hourly");
+      if(hourlyEl && hourly) {
+        var nowH = new Date().getHours();
+        var times = hourly.time || [];
+        var temps = hourly.temperature_2m || [];
+        var codes = hourly.weather_code || [];
+        var slots = [];
+        for(var i = 0; i < times.length && slots.length < 6; i++){
+          var hh = parseInt(times[i].split('T')[1]);
+          if(hh >= nowH) slots.push({ h: hh, temp: Math.round(temps[i]), code: codes[i] });
+        }
+        hourlyEl.innerHTML = slots.map(function(s, idx){
+          var label = idx === 0 ? 'Agora' : (String(s.h).padStart(2,'0') + 'h');
+          return '<div class="wx-hour">' +
+            '<div class="wh-time">' + label + '</div>' +
+            '<div class="wh-icon">' + wxIcon(s.code) + '</div>' +
+            '<div class="wh-temp">' + s.temp + '°</div>' +
+            '</div>';
+        }).join('');
+      }
+
+      Store.set("wx_cache", JSON.stringify({temp:temp, desc:desc, maxT:maxT, minT:minT, city:w.city||''}));
+    })
+    .catch(function(){
+      try{
+        var cached = JSON.parse(Store.get("wx_cache") || 'null');
+        if(cached){
+          var tel = document.getElementById("wtemp");
+          var dsc = document.getElementById("wdesc");
+          var mm  = document.getElementById("wminmax");
+          var cit = document.getElementById("wx-city");
+          if(tel) tel.textContent = cached.temp + "°";
+          if(dsc) dsc.textContent = cached.desc;
+          if(mm)  mm.textContent  = "Máx.: " + cached.maxT + "°   Mín.: " + cached.minT + "°";
+          if(cit) cit.textContent = cached.city || '';
+        }
+      }catch(e){}
+    });
+}
+
+var newsFeedRAF = null;
+var newsFeedY = 0;
+function loadNewsFeed(){
+  var w = document.getElementById('news-feed-widget');
+  var inner = document.getElementById('nf-inner');
+  if(!w || !inner) return;
+
+  if(!S.token) return;
+  fetch(CONFIG.API_ROOT + '/api/news-feed?token=' + encodeURIComponent(S.token))
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var items = data.items || [];
+      if(!items.length){ w.style.display='none'; return; }
+      w.style.display = 'flex';
+
+      function makeCard(n){
+        var imgHtml = n.img ? '<img class="nf-card-img" src="'+escapeAttr(n.img)+'" onerror="this.style.display=\'none\'"/>' : '';
+        return '<div class="nf-card">' + imgHtml +
+          '<div class="nf-card-ttl">' + sanitize(n.title) + '</div>' +
+          (n.desc ? '<div class="nf-card-dsc">' + sanitize(n.desc) + '</div>' : '') +
+          '</div>';
+      }
+      // Duplica para loop infinito
+      inner.innerHTML = items.map(makeCard).join('') + items.map(makeCard).join('');
+
+      // Scroll suave vertical
+      if(newsFeedRAF) cancelAnimationFrame(newsFeedRAF);
+      newsFeedY = 0;
+      var half = 0;
+      (function step(){
+        if(!half){ half = inner.scrollHeight / 2; }
+        newsFeedY += 0.4;
+        if(half && newsFeedY >= half) newsFeedY = 0;
+        inner.style.transform = 'translateY(-' + newsFeedY + 'px)';
+        newsFeedRAF = requestAnimationFrame(step);
+      })();
+
+      // Recarrega o feed a cada 10 minutos
+      setTimeout(loadNewsFeed, 10 * 60 * 1000);
+    })
+    .catch(function(){
+      if(w) w.style.display = 'none';
+    });
+}
+
+
+function wxIcon(code){
+  if(code === 0) return '☀️';
+  if(code <= 1)  return '🌤️';
+  if(code <= 2)  return '⛅';
+  if(code === 3) return '☁️';
+  if(code <= 48) return '🌫️';
+  if(code <= 55) return '🌧️';
+  if(code <= 67) return '🌧️';
+  if(code <= 77) return '🌨️';
+  if(code <= 82) return '⛈️';
+  return '⚡';
+}
+
+function wxLabel(code){
+  if(code === 0) return "Céu limpo";
+  if(code <= 2)  return "Poucas nuvens";
+  if(code === 3) return "Nublado";
+  if(code <= 48) return "Névoa";
+  if(code <= 67) return "Chuva";
+  if(code <= 77) return "Neve";
+  if(code <= 82) return "Pancadas de chuva";
+  return "Tempestade";
+}
+
+/* =========================================================================
+   8. DIAGNÓSTICO (tecla D no controle/teclado)
+   ========================================================================= */
+function renderDiag(){
+  var d = document.getElementById("diag");
+  if(d.style.display !== "block") return;
+  var item = (S.playlist && S.index >= 0) ? activeItems(S.playlist)[S.index] : null;
+  var up = Math.round((Date.now() - S.bootAt)/1000);
+  d.innerHTML =
+    '<h5>Dispositivo</h5>' +
+    'Tela: <b>' + (S.manifest ? sanitize(S.manifest.device.name) : "—") + '</b><br>' +
+    'Local: <b>' + (S.manifest ? sanitize(S.manifest.device.group) : "—") + '</b><br>' +
+    'Orientação: <b>' + (S.orientation === "portrait" ? "Vertical 9:16" : "Horizontal 16:9") +
+      (S.manifest && S.manifest.device.orientation === "auto" ? " (auto)" : "") + '</b>' +
+      (S.paused ? ' <span class="pill wait">PAUSADA</span>' : '') + '<br>' +
+    'Rede: <span class="pill ' + (S.online?"ok":"bad") + '">' + (S.online?"ONLINE":"OFFLINE") + '</span> ' +
+    'WS: <span class="pill ' + (S.ws && S.ws.readyState===1 ? "ok" : (CONFIG.DEMO?"wait":"bad")) + '">' +
+      (CONFIG.DEMO ? "DEMO" : (S.ws && S.ws.readyState===1 ? "ABERTO":"FECHADO")) + '</span><br>' +
+    'Uptime: <b>' + Math.floor(up/3600) + 'h ' + Math.floor((up%3600)/60) + 'm</b>' +
+    '<h5>Conteúdo</h5>' +
+    'Revisão: <b>' + S.revision + '</b><br>' +
+    'Playlist: <b>' + (S.playlist ? sanitize(S.playlist.name) : "—") + '</b><br>' +
+    'Item: <b>' + (item ? (S.index+1) + "/" + activeItems(S.playlist).length + " · " + sanitize(item.label || item.id) : "—") + '</b>' +
+    '<h5>Fila</h5>' +
+    'Proof-of-play: <b>' + S.queue.length + '</b> evento(s)<br>' +
+    'Erros: <b>' + S.errors.length + '</b>' +
+    '<h5>Atalhos</h5>' +
+    'D diagnóstico · R recarregar<br>P forçar próxima peça';
+}
+
+document.addEventListener("keydown", function(e){
+  var k = e.key.toLowerCase();
+  if(k === "d"){
+    var d = document.getElementById("diag");
+    d.style.display = d.style.display === "block" ? "none" : "block";
+    renderDiag();
+  }
+  if(k === "r") location.reload();
+  if(k === "p"){ clearTimeout(S.itemTimer); playNext(); }
+});
+
+/* =========================================================================
+   9. BOOT
+   ========================================================================= */
+(function boot(){
+  try{ S.queue = JSON.parse(Store.get("pop_queue") || "[]"); }catch(e){ S.queue = []; }
+
+  if(CONFIG.DEMO){
+    applyManifest(DEMO_MANIFEST);
+  } else if(!S.token){
+    startPairing();
+  } else {
+    var cached = CONFIG.PREVIEW ? null : Store.get("manifest_cache");
+    if(cached){ try{ applyManifest(JSON.parse(cached)); }catch(e){} }
+    connectWS();
+    fetchManifest();
+    if(!CONFIG.PREVIEW) setTimeout(heartbeat, 1500); // aparece online no painel logo ao ligar
+  }
+
+  tickClock();
+  setInterval(tickClock, 15000);
+  loadWeather();
+  setInterval(loadWeather, 30*60*1000);
+
+  scheduleHeartbeat(CONFIG.HEARTBEAT_S);
+  setInterval(fetchManifest, CONFIG.MANIFEST_POLL_S * 1000);
+  setInterval(flushEvents, 120000);
+
+  // reavalia o agendamento a cada minuto (dayparting, campanhas, itens com horário)
+  setInterval(function(){
+    if(!S.manifest) return;
+    var pl = pickPlaylist(S.manifest);
+    if(pl && S.playlist && pl.id !== S.playlist.id){
+      S.playlist = pl; S.index = -1;
+      clearTimeout(S.itemTimer);
+      playNext();
+    }
+  }, 60000);
+
+  // girou a tela / mudou o tamanho da janela: "auto" troca de layout na hora
+  var resizeT = null;
+  window.addEventListener("resize", function(){
+    clearTimeout(resizeT);
+    resizeT = setTimeout(function(){
+      if(!S.manifest) return;
+      if(targetOrientation(S.manifest) !== S.orientation){
+        buildStage(S.manifest);
+        S.index = -1; playNext();
+        heartbeat();
+      } else {
+        sizeStage();
+      }
+    }, 300);
+  });
+
+  window.addEventListener("online",  function(){ setOnline(true); fetchManifest(); });
+  window.addEventListener("offline", function(){ setOnline(false); });
+})();
+</script>
+</body>
+</html>
