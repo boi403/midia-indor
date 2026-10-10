@@ -165,7 +165,8 @@ router.put('/users/:id', async (req, res) => {
   if (b.password && String(b.password).length < 10) throw new HttpError(400, 'A senha precisa ter pelo menos 10 caracteres.');
   await run('UPDATE users SET name=?, email=?, role=?, client_id=?, active=? WHERE id = ?', [b.name, b.email.trim(), role, clientId, b.active === false ? 0 : 1, id]);
   if (b.password) {
-    await run('UPDATE users SET password_hash = ? WHERE id = ?', [bcrypt.hashSync(String(b.password), 10), id]);
+    // encerra sessões abertas com a senha antiga (mesma lógica de routes/auth.js)
+    await run('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?', [bcrypt.hashSync(String(b.password), 10), id]);
   }
   res.json({ success: true });
 });

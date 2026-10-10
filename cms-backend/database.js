@@ -289,6 +289,10 @@ async function migrate() {
   await addColumn('pending_signups', 'has_computer', 'INTEGER NOT NULL DEFAULT 1');
   // início da queda já avisada no Telegram (NULL = sem alerta pendente)
   await addColumn('devices', 'alert_offline_since', 'TEXT');
+  // incrementado a cada troca de senha: embutido no JWT, invalida na hora
+  // qualquer sessão/token emitido antes da troca (ex.: se a senha vazou e
+  // alguém já estava logado com ela, trocar a senha também derruba essa sessão)
+  await addColumn('users', 'token_version', 'INTEGER NOT NULL DEFAULT 0');
 
   // índices para as consultas mais frequentes (painel filtrando por cliente,
   // player montando a playlist, histórico de comandos/eventos das TVs)

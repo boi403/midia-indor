@@ -4,7 +4,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { run, get, all } = require('../database');
 const { requireAuth, requireClientScope } = require('../lib/auth');
-const { HttpError, bumpClient } = require('../lib/common');
+const { HttpError, bumpClient, trustedHost } = require('../lib/common');
 const config = require('../lib/config');
 const mp = require('../lib/mercadopago');
 const rateLimit = require('../lib/rate-limit');
@@ -14,9 +14,13 @@ const router = express.Router();
 // O Mercado Pago rejeita back_urls/notification_url que não sejam https. O túnel
 // Cloudflare que expõe este servidor publicamente sempre termina em TLS, mesmo
 // quando a requisição chega aqui como http simples — por isso não usamos
-// publicUrl(req, ...) (que respeitaria req.protocol) só para estas URLs.
+// req.protocol, só o host (e, por segurança, só um host confiável: ver
+// trustedHost em lib/common.js — sem isso um Host forjado poderia desviar a
+// confirmação de pagamento do Mercado Pago pro domínio de um atacante).
 function httpsUrl(req, path) {
-  return `https://${req.get('host')}${path}`;
+  const host = trustedHost(req);
+  if (!host) throw new HttpError(400, 'Requisição de um endereço não reconhecido.');
+  return `https://${host}${path}`;
 }
 
 // ---------- rotas públicas ----------

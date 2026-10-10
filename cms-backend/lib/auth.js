@@ -20,7 +20,9 @@ if (!SECRET) {
 const SESSION_DAYS = 30;
 
 function signUser(user) {
-  return jwt.sign({ uid: user.id, role: user.role }, SECRET, { expiresIn: `${SESSION_DAYS}d` });
+  // tv = token_version no momento da emissão; se a senha for trocada depois,
+  // o valor no banco muda e este token para de validar (ver userFromToken).
+  return jwt.sign({ uid: user.id, role: user.role, tv: user.token_version || 0 }, SECRET, { expiresIn: `${SESSION_DAYS}d` });
 }
 
 // Token curto usado pelo preview do player dentro do painel.
@@ -60,9 +62,12 @@ async function userFromToken(token) {
   let payload;
   try { payload = jwt.verify(token, SECRET); } catch { return null; }
   if (!payload.uid) return null;
-  const user = await get(`SELECT u.id, u.name, u.email, u.role, u.client_id, u.active, c.status AS client_status
+  const user = await get(`SELECT u.id, u.name, u.email, u.role, u.client_id, u.active, u.token_version, c.status AS client_status
     FROM users u LEFT JOIN clients c ON c.id = u.client_id WHERE u.id = ?`, [payload.uid]);
   if (!user || !user.active) return null;
+  // token emitido antes da senha ser trocada: tratado como sessão encerrada,
+  // mesmo que ainda não tenha expirado (ver signUser).
+  if ((payload.tv || 0) !== (user.token_version || 0)) return null;
   if (user.role === 'client' && user.client_status !== 'active') return null;
   return user;
 }

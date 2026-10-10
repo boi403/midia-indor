@@ -9,10 +9,40 @@ class HttpError extends Error {
 
 // Monta URL absoluta de um arquivo enviado a partir do host da requisição,
 // para funcionar tanto em localhost quanto a partir de TVs na rede local.
+// Uso restrito a URLs de mídia (não sensível: o pior caso é uma imagem que
+// não carrega). Para links sensíveis (e-mail de redefinição de senha, URLs
+// do Mercado Pago), use trustedUrl, que valida o Host.
 function publicUrl(req, url) {
   if (!url) return url;
   if (/^https?:\/\//i.test(url)) return url;
   return `${req.protocol}://${req.get('host')}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+// Hosts em que confiamos pra montar links sensíveis: o domínio público
+// configurado (billing.public_host, atrás do túnel) e a rede local, onde o
+// sistema roda hoje (painel/TVs acessando por localhost ou IP da LAN).
+const LOCAL_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const LAN_HOST_RE = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/;
+
+// Nunca confiar cegamente no cabeçalho Host: um atacante pode forjá-lo pra
+// "envenenar" um link sensível (ex.: mandar pro e-mail da vítima um link de
+// redefinição de senha apontando pro domínio do atacante, roubando o token
+// quando ela clicar — leva a um "fuga"/roubo de conta mesmo sem a senha
+// nunca ter sido exposta). Fecha em erro (fail closed) em vez de aceitar um
+// host desconhecido.
+function trustedHost(req) {
+  const configured = require('./config').get().billing?.public_host;
+  if (configured) return configured;
+  const host = String(req.get('host') || '');
+  const hostname = host.split(':')[0];
+  if (LOCAL_HOST_RE.test(host) || LAN_HOST_RE.test(hostname)) return host;
+  return null;
+}
+
+function trustedUrl(req, path) {
+  const host = trustedHost(req);
+  if (!host) throw new HttpError(400, 'Requisição de um endereço não reconhecido.');
+  return `${req.protocol}://${host}${path.startsWith('/') ? '' : '/'}${path}`;
 }
 
 async function clientPlan(clientId) {
@@ -90,4 +120,4 @@ const toInt = (v, def = null) => {
 };
 const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
 
-module.exports = { HttpError, publicUrl, clientPlan, requireFeature, checkLimit, bumpClient, bumpDevice, setNotifier, toInt, clamp, tierFeeCents, clientTvCount };
+module.exports = { HttpError, publicUrl, trustedUrl, trustedHost, clientPlan, requireFeature, checkLimit, bumpClient, bumpDevice, setNotifier, toInt, clamp, tierFeeCents, clientTvCount };
