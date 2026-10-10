@@ -25,8 +25,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
+rem Pega o caminho completo do node.exe: a tarefa agendada roda como SYSTEM, que
+rem pode nao ter o Node no PATH (ex.: instalacao so para este usuario, ou via
+rem nvm-windows). Gravando o caminho completo na tarefa, ela funciona mesmo
+rem sem o Node no PATH do SYSTEM.
+set "NODE_EXE="
+for /f "delims=" %%N in ('where node') do if not defined NODE_EXE set "NODE_EXE=%%N"
+
 rem Inicia 30s apos o boot (rede pronta). Sem limite de tempo de execucao.
-schtasks /Create /TN "%TAREFA%" /TR "\"%BASE%iniciar-tudo.bat\" /servico" /SC ONSTART /DELAY 0000:30 /RU SYSTEM /RL HIGHEST /F
+schtasks /Create /TN "%TAREFA%" /TR "\"%BASE%iniciar-tudo.bat\" /servico \"%NODE_EXE%\"" /SC ONSTART /DELAY 0000:30 /RU SYSTEM /RL HIGHEST /F
 if errorlevel 1 (
     echo ERRO ao criar a tarefa.
     pause
@@ -57,4 +64,11 @@ echo.
 echo  Painel: http://localhost:3000
 echo  Para desfazer: remover-inicio-automatico.bat
 echo ========================================
+echo.
+echo AVISO: se voce configurar "copia_extra" no config.json apontando para uma
+echo unidade de rede mapeada (ex.: Z:\) ou uma pasta do Google Drive/OneDrive,
+echo isso pode NAO funcionar quando o servidor roda como tarefa agendada (conta
+echo SYSTEM), pois o SYSTEM normalmente nao ve unidades mapeadas nem pastas de
+echo sincronizacao do usuario que esta logado. Use um caminho de rede UNC
+echo (\\servidor\pasta) ou copie os backups manualmente para esses destinos.
 pause

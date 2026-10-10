@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ShieldCheck, Building2 } from 'lucide-react';
 import { useAuth } from '../auth';
 import { errorMessage } from '../api';
@@ -70,9 +70,11 @@ export default function Login() {
             <span className="field-label">Senha</span>
             <input type="password" className="input" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </label>
+          <p className="muted small" style={{ margin: 0 }}><Link to="/esqueci-senha">Esqueci minha senha</Link></p>
           {error && <div className="form-error" role="alert">{error}</div>}
           <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Entrando…' : role === 'admin' ? 'Entrar como administrador' : 'Entrar'}</button>
           <p className="muted small center">A sessão fica salva neste navegador até você sair.</p>
+          <p className="muted small center">Ainda não é cliente? <Link to="/cadastro">Assine agora</Link></p>
         </form>
       </div>
     </div>

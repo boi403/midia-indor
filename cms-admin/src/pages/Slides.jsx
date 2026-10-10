@@ -12,6 +12,7 @@ function parseConfig(s) {
 export default function Slides() {
   const [slides, setSlides] = useState(null);
   const [form, setForm] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const toast = useToast();
 
   const load = useCallback(() => {
@@ -25,9 +26,22 @@ export default function Slides() {
       id: s?.id, type_variant: s ? (s.type === 'widget' ? 'qrcode' : s.variant) : 'institucional',
       kick: s?.kick || '', title: s?.title || '', text: s?.text || '', duration_s: Math.round((s?.duration_ms || 10000) / 1000),
       orientation: s?.orientation || 'any', qrData: cfg.data || '', qrTitle: cfg.title || '', qrCaption: cfg.caption || '',
+      bg_url: s?.bg_url || null, bg_full_url: s?.bg_full_url || null,
     });
   };
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  const uploadBg = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const r = await api.post('/upload', fd);
+      setForm((f) => ({ ...f, bg_url: r.data.url, bg_full_url: r.data.full_url }));
+    } catch (err) { toast(errorMessage(err), 'error'); } finally { setUploading(false); }
+  };
 
   const save = async (e) => {
     e.preventDefault();
@@ -37,6 +51,7 @@ export default function Slides() {
       kick: form.kick, title: form.title, text: form.text, orientation: form.orientation,
       duration_ms: (parseInt(form.duration_s, 10) || 10) * 1000,
       config_json: isQR ? JSON.stringify({ data: form.qrData, title: form.qrTitle, caption: form.qrCaption }) : null,
+      bg_url: form.bg_url || null,
     };
     try {
       if (form.id) await api.put(`/slides/${form.id}`, payload);
@@ -67,7 +82,7 @@ export default function Slides() {
             const variant = s.type === 'widget' ? 'qrcode' : s.variant;
             return (
               <article key={s.id} className="card slide-card">
-                <div className={`slide-preview sp-${variant}`}>
+                <div className={`slide-preview sp-${variant}`} style={s.bg_full_url ? { backgroundImage: `url(${s.bg_full_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
                   {variant === 'qrcode' ? (
                     <><div className="sp-qr" aria-hidden="true">▦</div><div><strong>{cfg.title}</strong><small>{cfg.caption}</small></div></>
                   ) : (
@@ -102,6 +117,14 @@ export default function Slides() {
                 </select>
               </Field>
             )}
+            <Field label="Imagem de fundo (opcional)" hint="Substitui o fundo padrão da variante. Recomendado: imagem na orientação da TV." className="span-2">
+              <div className="logo-row">
+                {form.bg_full_url && <img src={form.bg_full_url} alt="Fundo atual" className="logo-preview" />}
+                <input type="file" accept="image/*" onChange={uploadBg} disabled={uploading} />
+                {form.bg_url && <button type="button" className="link danger" onClick={() => setForm({ ...form, bg_url: null, bg_full_url: null })}>Remover imagem</button>}
+                {uploading && <span className="muted small">Enviando…</span>}
+              </div>
+            </Field>
             {!isQR ? (
               <>
                 <Field label="Chamada" className="span-2"><input className="input" value={form.kick} onChange={set('kick')} placeholder="Promoção do dia" /></Field>

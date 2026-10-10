@@ -27,6 +27,15 @@ const fmtDuration = (ms) => {
 const fmtGb = (bytes) => `${(bytes / 1073741824).toFixed(1)} GB`;
 const tvLabel = (d) => `${esc(d.name || `TV #${d.id}`)}${d.location ? ` (${esc(d.location)})` : ''}${d.client ? ` — ${esc(d.client)}` : ''}`;
 
+// Telegram recusa mensagem acima de ~4096 caracteres (erro 400): numa queda
+// geral (ex.: internet do prédio caiu) com 60+ TVs isso faria o envio falhar
+// e, sem o corte abaixo, perderíamos o alerta inteiro do incidente.
+const ALERT_LIST_MAX = 30;
+function capList(lines) {
+  if (lines.length <= ALERT_LIST_MAX) return lines;
+  return [...lines.slice(0, ALERT_LIST_MAX), `… +${lines.length - ALERT_LIST_MAX} mais`];
+}
+
 // ---------- TVs ----------
 async function checkTvs() {
   // sem Telegram não marca nada: ao configurar, as TVs já caídas ainda são avisadas
@@ -42,8 +51,11 @@ async function checkTvs() {
     // várias TVs de uma vez = uma mensagem só (típico de queda de internet no cliente)
     const lines = down.map(d => `• ${tvLabel(d)} — há ${fmtDuration(Date.now() - Date.parse(d.since))}`);
     const title = down.length === 1 ? '🔴 <b>TV offline</b>' : `🔴 <b>${down.length} TVs offline</b>`;
-    await alerts.send(`${title}\n${lines.join('\n')}`);
-    for (const d of down) await run('UPDATE devices SET alert_offline_since = ? WHERE id = ?', [d.since, d.id]);
+    const sent = await alerts.send(`${title}\n${capList(lines).join('\n')}`);
+    // só marca como avisado se o envio realmente saiu; senão o próximo ciclo
+    // tenta de novo (antes, uma falha de envio — ex.: mensagem grande demais
+    // para o Telegram — ainda marcava tudo como avisado e perdia o alerta)
+    if (sent) for (const d of down) await run('UPDATE devices SET alert_offline_since = ? WHERE id = ?', [d.since, d.id]);
   }
 
   const back = await all(`SELECT d.id, d.name, d.location, d.online, d.alert_offline_since AS since, d.online_since, c.name AS client
@@ -85,7 +97,7 @@ async function summaryText() {
   const lines = [
     `📊 <b>Resumo do dia</b>`,
     `TVs online: <b>${tvs.length - off.length}/${tvs.length}</b>`,
-    ...off.map(d => `  🔴 ${tvLabel(d)}${d.since ? ` — offline há ${fmtDuration(Date.now() - Date.parse(d.since))}` : ''}`),
+    ...capList(off.map(d => `  🔴 ${tvLabel(d)}${d.since ? ` — offline há ${fmtDuration(Date.now() - Date.parse(d.since))}` : ''}`)),
     b ? (b.ok ? `Backup: ✅ ${b.at.toLocaleString('pt-BR')} (${(b.bytes / 1048576).toFixed(1)} MB)` : `Backup: 🔴 falhou — ${esc(b.error)}`) : 'Backup: ⚠️ nenhum ainda',
     `Disco livre: ${fmtGb(free)}`,
     `Servidor no ar há ${fmtDuration(Date.now() - serverStartedAt())}`,
@@ -101,6 +113,37 @@ async function checkSummary() {
   if (now.getHours() !== Number(hour) || summarySentOn === today) return;
   summarySentOn = today;
   await alerts.send(await summaryText());
+}
+
+// ---------- retenção ----------
+// playback_events (proof-of-play) e device_commands crescem sem limite.
+// Apaga em lotes pequenos (não um DELETE gigante só) pra não travar a conexão
+// compartilhada com uma escrita longa. O SQLite deste projeto não foi
+// compilado com suporte a "DELETE ... LIMIT", então o lote é feito com um
+// IN (SELECT ... LIMIT ?) sobre o id (rowid), que tem o mesmo efeito.
+const RETENTION_BATCH = 5000;
+
+async function pruneBatches(sql, params) {
+  let total = 0;
+  for (;;) {
+    const { changes } = await run(sql, params);
+    total += changes;
+    if (!changes) break;
+  }
+  return total;
+}
+
+async function pruneOldData() {
+  const eventsLimit = new Date(Date.now() - 90 * 86400000).toISOString();
+  const events = await pruneBatches(
+    'DELETE FROM playback_events WHERE id IN (SELECT id FROM playback_events WHERE started_at < ? LIMIT ?)',
+    [eventsLimit, RETENTION_BATCH],
+  );
+  const commands = await pruneBatches(
+    "DELETE FROM device_commands WHERE id IN (SELECT id FROM device_commands WHERE issued_at < datetime('now', '-7 days') LIMIT ?)",
+    [RETENTION_BATCH],
+  );
+  console.log(`[retenção] ${events} evento(s) de reprodução (>90 dias) e ${commands} comando(s) de dispositivo (>7 dias) removidos`);
 }
 
 // ---------- healthchecks.io ----------
@@ -141,6 +184,11 @@ function start() {
   setInterval(() => ping(), 5 * 60000);
   guard('disco', checkDisk)();
   ping('/start');
+
+  // retenção de playback_events/device_commands: diária, com uma primeira
+  // passada logo após o início (não precisa esperar 24h pra começar a limpar)
+  setTimeout(guard('retencao', pruneOldData), 2 * 60000);
+  setInterval(guard('retencao', pruneOldData), 24 * 3600000);
 
   // desligamento normal (Ctrl+C, fim da tarefa): não é falha
   for (const sig of ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP']) {

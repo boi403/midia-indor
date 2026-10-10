@@ -1,11 +1,13 @@
-// Backup diário do banco. Usa VACUUM INTO, que gera uma cópia consistente
-// com o servidor rodando (copiar o cms.db direto pode pegar o arquivo no meio
-// de uma escrita). Cada cópia é conferida com PRAGMA quick_check antes de
-// contar como válida.
+// Backup diário do banco. Usa a API de backup "online" do sqlite3 (a mesma
+// sqlite3_backup_init/step/finish do SQLite), que copia em pequenos passos de
+// páginas em vez de travar a conexão compartilhada de uma vez só como o
+// VACUUM INTO fazia — entre um passo e outro, o resto do app consegue usar a
+// conexão (heartbeats das TVs, etc.). Cada cópia é conferida com
+// PRAGMA quick_check antes de contar como válida.
 const fs = require('fs');
 const path = require('path');
 const sqlite3 = require('sqlite3');
-const { run } = require('../database');
+const { run, db } = require('../database');
 const config = require('./config');
 const alerts = require('./alerts');
 
@@ -46,21 +48,44 @@ function quickCheck(file) {
 }
 
 // Espelha uploads/ em destino/uploads copiando só o que é novo ou mudou.
-function mirrorUploads(dest) {
+// Cópia assíncrona (fs.promises): uploads podem ser vídeos grandes, e
+// copyFileSync travaria todo o event loop (e com ele todo o tráfego
+// WebSocket/HTTP das TVs) pelo tempo inteiro da cópia.
+async function mirrorUploads(dest) {
   let copied = 0;
-  const walk = (src, dst) => {
+  const walk = async (src, dst) => {
     fs.mkdirSync(dst, { recursive: true });
     for (const e of fs.readdirSync(src, { withFileTypes: true })) {
       const s = path.join(src, e.name), d = path.join(dst, e.name);
-      if (e.isDirectory()) { walk(s, d); continue; }
+      if (e.isDirectory()) { await walk(s, d); continue; }
       const st = fs.statSync(s);
       let dt = null;
       try { dt = fs.statSync(d); } catch { /* não existe no destino */ }
-      if (!dt || dt.size !== st.size) { fs.copyFileSync(s, d); copied++; }
+      if (!dt || dt.size !== st.size) { await fs.promises.copyFile(s, d); copied++; }
     }
   };
-  if (fs.existsSync(UPLOADS_DIR)) walk(UPLOADS_DIR, path.join(dest, 'uploads'));
+  if (fs.existsSync(UPLOADS_DIR)) await walk(UPLOADS_DIR, path.join(dest, 'uploads'));
   return copied;
+}
+
+// Cópia "online" do SQLite (sqlite3_backup_init/step/finish) em pequenos
+// passos de páginas, cedendo o event loop entre um passo e outro — ao
+// contrário do VACUUM INTO, que faz tudo de uma vez só e, nesse meio tempo,
+// trava a conexão compartilhada (e com ela toda requisição/heartbeat das TVs).
+const BACKUP_PAGES_PER_STEP = 200;
+
+function backupStepped(destFile) {
+  return new Promise((resolve, reject) => {
+    const backup = db.backup(destFile);
+    const next = () => {
+      backup.step(BACKUP_PAGES_PER_STEP, (err, completed) => {
+        if (err) return backup.finish(() => reject(err));
+        if (completed) return backup.finish((err2) => (err2 ? reject(err2) : resolve()));
+        setImmediate(next); // devolve o event loop antes do próximo lote de páginas
+      });
+    };
+    next();
+  });
 }
 
 async function doBackup() {
@@ -74,7 +99,7 @@ async function doBackup() {
   const notes = [];
   try {
     if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
-    await run('VACUUM INTO ?', [tmp]);
+    await backupStepped(tmp);
     await quickCheck(tmp);
     fs.renameSync(tmp, file);
     prune(dir, cfg.manter_dias);
@@ -83,9 +108,9 @@ async function doBackup() {
       // falha na cópia extra (Drive desconectado etc.) não invalida o backup local
       try {
         fs.mkdirSync(cfg.copia_extra, { recursive: true });
-        fs.copyFileSync(file, path.join(cfg.copia_extra, name));
+        await fs.promises.copyFile(file, path.join(cfg.copia_extra, name));
         prune(cfg.copia_extra, cfg.manter_dias);
-        if (cfg.copiar_uploads) notes.push(`${mirrorUploads(cfg.copia_extra)} mídia(s) nova(s) copiada(s)`);
+        if (cfg.copiar_uploads) notes.push(`${await mirrorUploads(cfg.copia_extra)} mídia(s) nova(s) copiada(s)`);
       } catch (err) {
         notes.push(`cópia extra falhou: ${err.message}`);
         await alerts.sendThrottled('backup-extra', `⚠️ Backup local OK, mas a cópia para <code>${alerts.esc(cfg.copia_extra)}</code> falhou:\n${alerts.esc(err.message)}`, 12 * 60);

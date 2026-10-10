@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, SkipForward, Pause, Play, Camera, ListVideo, Trash2, Zap } from 'lucide-react';
 import api, { errorMessage } from '../api';
@@ -23,16 +23,28 @@ export default function DeviceDetail() {
   const [cameras, setCameras] = useState([]);
   const [clients, setClients] = useState([]);
   const [now, setNow] = useState({ playlist_id: '', minutes: 30 });
+  const [stale, setStale] = useState(false);
+  const loadedRef = useRef(false);
   const listPath = isAdmin ? `${base}/dispositivos` : `${base}/tvs`;
 
   const load = useCallback(() => {
     api.get(`/devices/${id}`).then((r) => {
+      loadedRef.current = true;
+      setStale(false);
       setD(r.data);
       setForm((f) => f || {
         name: r.data.name, location: r.data.location || '', orientation: r.data.orientation, resolution: r.data.resolution,
         playlist_id: r.data.playlist_id || '', volume: r.data.volume, brightness: r.data.brightness, client_id: r.data.client_id,
       });
-    }).catch((e) => { toast(errorMessage(e), 'error'); navigate(listPath); });
+    }).catch((e) => {
+      if (loadedRef.current) {
+        // erro transitório no polling: mantém a página e os dados atuais, só avisa
+        setStale(true);
+      } else {
+        toast(errorMessage(e), 'error');
+        navigate(listPath);
+      }
+    });
   }, [id, toast, navigate, listPath]);
 
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
@@ -96,6 +108,7 @@ export default function DeviceDetail() {
     <div>
       <Link to={listPath} className="back"><ArrowLeft size={16} /> {isAdmin ? 'Dispositivos' : 'Minhas TVs'}</Link>
       <PageHeader title={d.name} subtitle={<><DeviceStatus device={d} /> {d.ws_connected && <span className="badge badge-info">⚡ tempo real</span>} {isAdmin && d.client_name}</>} />
+      {stale && <div className="note">⚠ Dados podem estar desatualizados — tentando atualizar novamente.</div>}
       <div className="card"><DeviceActions device={d} onChange={load} showConfigure={false} /></div>
 
       <div className="grid-2">

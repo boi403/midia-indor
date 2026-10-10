@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Users, Tv, Wallet, Megaphone } from 'lucide-react';
 import api, { errorMessage } from '../../api';
@@ -14,13 +14,29 @@ export default function AdminDashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const { selectClient } = useAuth();
+  const seqRef = useRef(0);
+  const liveTimer = useRef(null);
 
   const load = useCallback(() => {
-    api.get('/dashboard/admin').then((r) => { setData(r.data); setError(''); }).catch((e) => setError(errorMessage(e)));
+    const seq = ++seqRef.current;
+    api.get('/dashboard/admin').then((r) => {
+      if (seq !== seqRef.current) return;
+      setData(r.data);
+      setError('');
+    }).catch((e) => {
+      if (seq !== seqRef.current) return;
+      setError(errorMessage(e));
+    });
   }, []);
 
   useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
-  useLive((msg) => { if (msg.type === 'device.online' || msg.type === 'device.offline') load(); });
+  useEffect(() => () => clearTimeout(liveTimer.current), []);
+  useLive((msg) => {
+    if (msg.type === 'device.online' || msg.type === 'device.offline') {
+      clearTimeout(liveTimer.current);
+      liveTimer.current = setTimeout(load, 1500);
+    }
+  });
 
   if (error) return <div className="form-error">{error}</div>;
   if (!data) return <Loading />;

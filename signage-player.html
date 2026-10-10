@@ -263,7 +263,8 @@ var S = {
   wsBackoff: 1000,
   queue: [],            // proof-of-play pendente
   errors: [],
-  bootAt: Date.now()
+  bootAt: Date.now(),
+  manifestInflight: false // evita heartbeat/ws/poll disparando fetch+aplicação de manifesto em paralelo
 };
 
 /* =========================================================================
@@ -505,20 +506,45 @@ function renderFinance(el, m){
 /* =========================================================================
    3. AGENDAMENTO — qual playlist toca agora
    ========================================================================= */
-function minutesNow(){ var d=new Date(); return d.getHours()*60 + d.getMinutes(); }
+// "agora" para fins de agendamento: usa o timezone configurado no manifesto
+// (manifest.device.timezone), não o relógio/timezone do SO da TV. Caixas de
+// TV Android baratas costumam vir com timezone errado de fábrica, o que
+// bagunçava as janelas de agendamento e fazia "exibir agora" de curta duração
+// nunca aparecer.
+function tzNow(){
+  var d = new Date();
+  var tz = S.manifest && S.manifest.device && S.manifest.device.timezone;
+  if(!tz) return { day:d.getDay(), hour:d.getHours(), minute:d.getMinutes(), year:d.getFullYear(), month:d.getMonth()+1, date:d.getDate() };
+  try{
+    var parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, hour12:false, weekday:"short",
+      year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit"
+    }).formatToParts(d);
+    var map = {};
+    parts.forEach(function(p){ map[p.type] = p.value; });
+    var WEEKDAYS = { Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6 };
+    var hour = parseInt(map.hour, 10);
+    if(hour === 24) hour = 0; // alguns navegadores retornam "24" em vez de "00" com hour12:false
+    return { day:WEEKDAYS[map.weekday], hour:hour, minute:parseInt(map.minute,10),
+             year:parseInt(map.year,10), month:parseInt(map.month,10), date:parseInt(map.day,10) };
+  }catch(e){
+    return { day:d.getDay(), hour:d.getHours(), minute:d.getMinutes(), year:d.getFullYear(), month:d.getMonth()+1, date:d.getDate() };
+  }
+}
+function minutesNow(){ var t=tzNow(); return t.hour*60 + t.minute; }
 function toMin(hhmm){ var p=hhmm.split(":"); return (+p[0])*60 + (+p[1]); }
 function pad2(n){ return (n < 10 ? "0" : "") + n; }
 // data/hora LOCAL da TV ("YYYY-MM-DD" / "YYYY-MM-DDTHH:MM") — toISOString()
 // daria a data em UTC, que vira o dia às 20h/21h no Brasil.
-function localDate(){ var d=new Date(); return d.getFullYear() + "-" + pad2(d.getMonth()+1) + "-" + pad2(d.getDate()); }
-function localStamp(){ var d=new Date(); return localDate() + "T" + pad2(d.getHours()) + ":" + pad2(d.getMinutes()); }
+function localDate(){ var t=tzNow(); return t.year + "-" + pad2(t.month) + "-" + pad2(t.date); }
+function localStamp(){ var t=tzNow(); return localDate() + "T" + pad2(t.hour) + ":" + pad2(t.minute); }
 function inHours(from, to){
   var now = minutesNow(), a = toMin(from || "00:00"), b = toMin(to || "23:59");
   return (a <= b) ? (now >= a && now <= b) : (now >= a || now <= b); // cruza meia-noite
 }
 
 function pickPlaylist(m){
-  var day = new Date().getDay(), stamp = localStamp(), best = null;
+  var day = tzNow().day, stamp = localStamp(), best = null;
   (m.schedule || []).forEach(function(s){
     if(s.days.indexOf(day) < 0) return;
     if(!inHours(s.from, s.to)) return;
@@ -565,15 +591,27 @@ function playNext(){
   main.appendChild(node);
   requestAnimationFrame(function(){ node.classList.add("on"); });
 
-  // remove os anteriores depois da transição
+  // remove os anteriores depois da transição — libera antes os recursos
+  // (decoder do vídeo / conexão MJPEG da câmera), senão viram um vazamento
+  // lento numa TV que roda sem reiniciar por semanas.
   Array.prototype.slice.call(main.querySelectorAll(".item")).forEach(function(old){
-    if(old !== node) setTimeout(function(){ old.remove(); }, 700);
+    if(old === node) return;
+    setTimeout(function(){
+      var oldVid = old.querySelector("video");
+      if(oldVid){ oldVid.pause(); oldVid.removeAttribute("src"); oldVid.load(); }
+      var oldCamImg = old.querySelector(".camera-slide img");
+      if(oldCamImg) oldCamImg.src = "";
+      old.remove();
+    }, 700);
   });
 
   var dur = item.duration_ms || 10000;
   var vid = node.querySelector("video");
 
   function finish(completed){
+    // evita que onended/onerror do vídeo que está saindo disparem de novo
+    // durante a transição e chamem playNext() uma segunda vez
+    if(vid){ vid.onended = null; vid.onerror = null; }
     logPlayback(item, startedAt, dur, completed !== false);
     playNext();
   }
@@ -657,8 +695,10 @@ function buildItem(item){
   }
   if(item.type === "widget" && item.widget === "qrcode"){
     var c = item.config || {};
+    // sobrepõe um degradê escuro à imagem de fundo pra manter o texto claro legível
+    var qrBgStyle = c.bg ? ' style="background-image:linear-gradient(140deg,rgba(5,10,14,.78),rgba(5,10,14,.6)),url(&quot;' + escapeAttr(c.bg) + '&quot;);background-size:cover;background-position:center"' : '';
     d.innerHTML =
-      '<div class="slide qr">' +
+      '<div class="slide qr"' + qrBgStyle + '>' +
         '<div><div class="rule"></div>' +
           '<h1 style="font-size:calc(3.6*var(--vw,1vw))">' + sanitize(c.title || "Aponte a câmera") + '</h1>' +
           '<p>' + sanitize(c.caption || "") + '</p></div>' +
@@ -684,7 +724,9 @@ function buildItem(item){
       }).join("") + '</div>';
     return d;
   }
-  d.innerHTML = '<div class="slide ' + escapeAttr(s.variant || "institucional") + '">' +
+  // sobrepõe um degradê escuro à imagem de fundo pra manter o texto claro legível
+  var slideBgStyle = s.bg ? ' style="background-image:linear-gradient(140deg,rgba(5,10,14,.78),rgba(5,10,14,.6)),url(&quot;' + escapeAttr(s.bg) + '&quot;);background-size:cover;background-position:center"' : '';
+  d.innerHTML = '<div class="slide ' + escapeAttr(s.variant || "institucional") + '"' + slideBgStyle + '>' +
     (s.kick ? '<div class="kick">' + sanitize(s.kick) + '</div>' : '') +
     '<div class="rule"></div>' +
     '<h1>' + sanitize(s.title || "") + '</h1>' +
@@ -794,23 +836,22 @@ function applyManifest(m){
   renderDiag();
 }
 
+// Heartbeat (~20s), ping do WebSocket e o poll (~60s) podem todos disparar
+// fetchManifest() de forma independente; sem essa trava, um ciclo ainda em
+// andamento (download de mídia grande incluso) ganhava um segundo ciclo em
+// paralelo baixando os mesmos arquivos de novo.
 function fetchManifest(){
-  if(CONFIG.DEMO || !S.token || S.pairing) return;
+  if(CONFIG.DEMO || !S.token || S.pairing || S.manifestInflight) return;
+  S.manifestInflight = true;
   api("GET", "/player/manifest?revision=" + S.revision).then(function(m){
+    S.manifestInflight = false;
     if(m.notModified) return;
     setOnline(true);
-    // precache antes de aplicar: nunca troca de revisão com asset faltando
-    precache(m.precache || []).then(function(){ applyManifest(m); });
-  }).catch(function(e){ if(!e.auth) setOnline(false); });
-}
-
-function precache(list){
-  if(!list.length || !("caches" in window)) return Promise.resolve();
-  return caches.open("signage-v1").then(function(c){
-    return Promise.all(list.map(function(a){
-      return c.match(a.url).then(function(hit){ return hit ? null : c.add(a.url); });
-    }));
-  }).catch(function(){ return null; });
+    applyManifest(m);
+  }).catch(function(e){
+    S.manifestInflight = false;
+    if(!e.auth) setOnline(false);
+  });
 }
 
 // Heartbeat: é por ele que o painel sabe se a TV está online, o que ela está
@@ -1018,6 +1059,7 @@ function loadWeather(){
 
 var newsFeedRAF = null;
 var newsFeedY = 0;
+var newsFeedTimer = null; // id único do polling — evita acumular ciclos a cada re-render do painel lateral
 function loadNewsFeed(){
   var w = document.getElementById('news-feed-widget');
   var inner = document.getElementById('nf-inner');
@@ -1052,12 +1094,16 @@ function loadNewsFeed(){
         inner.style.transform = 'translateY(-' + newsFeedY + 'px)';
         newsFeedRAF = requestAnimationFrame(step);
       })();
-
-      // Recarrega o feed a cada 10 minutos
-      setTimeout(loadNewsFeed, 10 * 60 * 1000);
     })
     .catch(function(){
       if(w) w.style.display = 'none';
+    })
+    .then(function(){
+      // sempre reagenda — sucesso, falha ou feed vazio — e cancela qualquer
+      // ciclo pendente antes, pra nunca ter mais de um polling rodando
+      // (acontecia a cada re-render do painel lateral, ex.: troca de branding)
+      clearTimeout(newsFeedTimer);
+      newsFeedTimer = setTimeout(loadNewsFeed, 10 * 60 * 1000);
     });
 }
 

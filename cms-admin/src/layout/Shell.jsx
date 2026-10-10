@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Building2, CreditCard, Tv, Image as ImageIcon, ListVideo, CalendarClock,
-  Newspaper, Camera, BarChart3, Settings, UserCircle, LogOut, Menu, Presentation,
+  Newspaper, Camera, BarChart3, Settings, UserCircle, LogOut, Menu, Presentation, Receipt,
 } from 'lucide-react';
 import api from '../api';
 import { useAuth } from '../auth';
@@ -17,6 +17,7 @@ function navFor(isAdmin, can) {
     can('cameras') && { to: 'cameras', label: 'Câmeras', icon: Camera },
     can('reports') && { to: 'relatorios', label: 'Relatórios', icon: BarChart3 },
     { to: 'configuracoes', label: 'Aparência da tela', icon: Settings },
+    { to: 'faturas', label: 'Faturas', icon: Receipt },
   ].filter(Boolean);
   if (isAdmin) {
     return [

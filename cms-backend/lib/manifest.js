@@ -1,7 +1,7 @@
 // Manifesto: o JSON auto-contido que cada TV recebe (ver signage-contrato-api.md §4).
 const { get, all } = require('../database');
 const { publicUrl, clientPlan } = require('./common');
-const { cameraSig } = require('./auth');
+const { signCameraLink } = require('./auth');
 const finance = require('./finance');
 
 // Nome exibido no painel ("Exibindo agora"); mídias antigas não têm título
@@ -32,25 +32,53 @@ function localStamp(date, timeZone) {
 }
 
 function cameraItem(req, cam, id, duration) {
+  const { sig, exp } = signCameraLink(cam.id);
   return {
     id, type: 'camera', duration_ms: duration, label: cam.label,
-    config: { label: cam.label, url: publicUrl(req, `/api/cameras/${cam.id}/stream.mjpg?sig=${cameraSig(cam.id)}`) },
+    config: { label: cam.label, url: publicUrl(req, `/api/cameras/${cam.id}/stream.mjpg?sig=${sig}&exp=${exp}`) },
   };
 }
 
-function slideItem(s, id, duration) {
+function slideItem(req, s, id, duration) {
+  const bg = s.bg_url ? publicUrl(req, s.bg_url) : null;
   if (s.type === 'widget') {
     let config = {};
     try { config = JSON.parse(s.config_json || '{}'); } catch { /* JSON inválido: widget vazio */ }
+    if (bg) config.bg = bg;
     return { id, type: 'widget', widget: s.widget, duration_ms: duration, config, label: config.title || 'QR Code', orientation: s.orientation };
   }
   return {
     id, type: 'slide', duration_ms: duration, orientation: s.orientation, label: s.title?.replace(/<[^>]+>/g, ' ') || s.variant,
-    slide: { variant: s.variant, kick: s.kick, title: s.title, text: s.text },
+    slide: { variant: s.variant, kick: s.kick, title: s.title, text: s.text, bg },
   };
 }
 
-async function expandPlaylist(req, clientId, pl, notices) {
+// Cache curto dos playlists já expandidos, por (cliente, content_revision).
+// notifyManifest() avisa de uma vez todas as TVs de um cliente após qualquer
+// edição de conteúdo; sem isso, cada uma recalculava do zero (reconsultando
+// midia/slides/cameras) mesmo pedindo exatamente o mesmo manifesto. A chave
+// inclui a revisão, então ela nunca fica velha: ao mudar, as entradas da
+// revisão anterior deste cliente são descartadas (abaixo) e uma nova entrada
+// é calculada na próxima chamada.
+const playlistCache = new Map();  // `${clientId}:${rev}:${pl.id}` -> Promise<{id,name,items}>
+const playlistCacheRev = new Map(); // clientId -> última content_revision vista
+
+async function expandPlaylist(req, clientId, pl, notices, contentRevision) {
+  if (playlistCacheRev.get(clientId) !== contentRevision) {
+    for (const key of playlistCache.keys()) if (key.startsWith(`${clientId}:`)) playlistCache.delete(key);
+    playlistCacheRev.set(clientId, contentRevision);
+  }
+  const key = `${clientId}:${contentRevision}:${pl.id}`;
+  let promise = playlistCache.get(key);
+  if (!promise) {
+    promise = expandPlaylistUncached(req, clientId, pl, notices);
+    playlistCache.set(key, promise);
+    promise.catch(() => playlistCache.delete(key)); // não guarda falha em cache
+  }
+  return promise;
+}
+
+async function expandPlaylistUncached(req, clientId, pl, notices) {
   const rows = await all('SELECT * FROM playlist_items WHERE playlist_id = ? AND enabled = 1 ORDER BY position, id', [pl.id]);
   const media = new Map((await all('SELECT * FROM midia WHERE client_id = ?', [clientId])).map(m => [String(m.id), m]));
   const slides = new Map((await all('SELECT * FROM slides WHERE client_id = ?', [clientId])).map(s => [String(s.id), s]));
@@ -69,7 +97,7 @@ async function expandPlaylist(req, clientId, pl, notices) {
     } else if (r.kind === 'slide') {
       const s = slides.get(String(r.ref_id));
       if (!s) continue;
-      item = slideItem(s, id, r.duration_ms);
+      item = slideItem(req, s, id, r.duration_ms);
     } else if (r.kind === 'camera') {
       const c = cams.get(String(r.ref_id));
       if (!c || !c.enabled) continue;
@@ -101,7 +129,7 @@ async function autoPlaylist(req, clientId) {
   for (const m of await all('SELECT * FROM midia WHERE client_id = ? ORDER BY position, id', [clientId])) {
     items.push({ id: 'm' + m.id, type: m.type, asset_id: 'm' + m.id, url: publicUrl(req, m.url), duration_ms: m.duration_ms, orientation: m.orientation, label: mediaLabel(m) });
   }
-  for (const s of await all('SELECT * FROM slides WHERE client_id = ? ORDER BY position', [clientId])) items.push(slideItem(s, 's' + s.id, s.duration_ms));
+  for (const s of await all('SELECT * FROM slides WHERE client_id = ? ORDER BY position', [clientId])) items.push(slideItem(req, s, 's' + s.id, s.duration_ms));
   return { id: 'pl-auto', name: 'Conteúdo do cliente', items };
 }
 
@@ -117,7 +145,7 @@ async function buildManifest(req, device) {
     if (added.has(id)) return 'pl-' + id;
     const pl = await get('SELECT * FROM playlists WHERE id = ? AND client_id = ?', [id, client.id]);
     if (!pl) return null;
-    playlists.push(await expandPlaylist(req, client.id, pl, notices));
+    playlists.push(await expandPlaylist(req, client.id, pl, notices, client.content_revision));
     added.add(id);
     return 'pl-' + id;
   }
@@ -153,7 +181,7 @@ async function buildManifest(req, device) {
 
   // 4) câmera fixada (na TV ou em todas as TVs do cliente) vence tudo
   const pinnedId = device.pinned_camera_id || client.pinned_camera_id;
-  const pinned = pinnedId && await get('SELECT * FROM cameras WHERE id = ? AND client_id = ?', [pinnedId, client.id]);
+  const pinned = pinnedId && await get('SELECT * FROM cameras WHERE id = ? AND client_id = ? AND enabled = 1', [pinnedId, client.id]);
   if (pinned) {
     const id = 'pl-camera-pin-' + pinned.id;
     playlists.push({ id, name: 'Câmera fixada: ' + pinned.label, items: [cameraItem(req, pinned, 'cam_' + pinned.id, 24 * 3600 * 1000)] });
@@ -196,8 +224,17 @@ async function buildManifest(req, device) {
 }
 
 function manifestRevision(client, device) {
-  // soma de contadores monotônicos: só cresce, e muda quando qualquer um muda
-  return client.content_revision + device.config_revision + finance.getRevision();
+  // String composta (não soma numérica): inclui o client_id para que, se uma
+  // TV for realocada para outro cliente, a revisão SEMPRE mude — com soma,
+  // content_revision + config_revision podia coincidentemente dar um valor
+  // igual ou menor ao anterior e gerar um 304 indevido (TV ficava mostrando
+  // conteúdo do cliente errado). A cotação financeira (lib/finance.js) foi
+  // removida de propósito: ela muda a cada ~10 min pra todos os clientes e
+  // forçava toda TV a reconstruir o manifesto inteiro só por isso; agora as
+  // cotações são entregues por fora (ver GET /api/reports/quotes), sem afetar
+  // esta revisão. Comparação deve ser sempre por igualdade de string/valor,
+  // nunca numérica.
+  return `${client.id}:${client.content_revision}:${device.config_revision}`;
 }
 
 module.exports = { buildManifest, manifestRevision, LAYOUTS, localStamp };

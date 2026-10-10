@@ -27,3 +27,6 @@ _backup-v1/
 Thumbs.db
 .DS_Store
 .vscode/
+
+# estado interno do Claude Code / OMC
+.omc/

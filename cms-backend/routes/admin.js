@@ -85,11 +85,19 @@ router.post('/clients', async (req, res) => {
   const b = req.body || {};
   const r = await run(`INSERT INTO clients (name, plan_id, max_tvs_override, monthly_fee_cents, due_day, status, contact_email, contact_phone, notes, tagline)
     VALUES (?,?,?,?,?,?,?,?,?,?)`, [...clientParams(b), b.name.toUpperCase()]);
-  await run('INSERT INTO playlists (client_id, name, is_default) VALUES (?, ?, 1)', [r.lastID, 'Playlist Principal']);
-  // já cria o acesso do cliente, se informado
-  if (b.user_email && b.user_password) {
-    await run("INSERT INTO users (name, email, password_hash, role, client_id) VALUES (?, ?, ?, 'client', ?)",
-      [b.user_name || b.name, b.user_email, bcrypt.hashSync(String(b.user_password), 10), r.lastID]);
+  let playlist;
+  try {
+    playlist = await run('INSERT INTO playlists (client_id, name, is_default) VALUES (?, ?, 1)', [r.lastID, 'Playlist Principal']);
+    // já cria o acesso do cliente, se informado
+    if (b.user_email && b.user_password) {
+      await run("INSERT INTO users (name, email, password_hash, role, client_id) VALUES (?, ?, ?, 'client', ?)",
+        [b.user_name || b.name, b.user_email, bcrypt.hashSync(String(b.user_password), 10), r.lastID]);
+    }
+  } catch (e) {
+    // limpeza compensatória: não deixar cliente/playlist órfãos se um passo seguinte falhar
+    if (playlist) await run('DELETE FROM playlists WHERE id = ?', [playlist.lastID]);
+    await run('DELETE FROM clients WHERE id = ?', [r.lastID]);
+    throw e;
   }
   res.json({ id: r.lastID });
 });
@@ -140,7 +148,7 @@ function userParams(b) {
 router.post('/users', async (req, res) => {
   const b = req.body || {};
   const { role, clientId } = userParams(b);
-  if (!b.password || String(b.password).length < 6) throw new HttpError(400, 'A senha precisa ter pelo menos 6 caracteres.');
+  if (!b.password || String(b.password).length < 10) throw new HttpError(400, 'A senha precisa ter pelo menos 10 caracteres.');
   if (await get('SELECT id FROM users WHERE email = ?', [b.email])) throw new HttpError(409, 'Já existe um usuário com este e-mail.');
   const r = await run('INSERT INTO users (name, email, password_hash, role, client_id, active) VALUES (?,?,?,?,?,?)',
     [b.name, b.email.trim(), bcrypt.hashSync(String(b.password), 10), role, clientId, b.active === false ? 0 : 1]);
@@ -154,9 +162,9 @@ router.put('/users/:id', async (req, res) => {
   if (id === req.user.id && (role !== 'admin' || b.active === false)) throw new HttpError(400, 'Você não pode remover seu próprio acesso de administrador.');
   const dup = await get('SELECT id FROM users WHERE email = ? AND id != ?', [b.email, id]);
   if (dup) throw new HttpError(409, 'Já existe um usuário com este e-mail.');
+  if (b.password && String(b.password).length < 10) throw new HttpError(400, 'A senha precisa ter pelo menos 10 caracteres.');
   await run('UPDATE users SET name=?, email=?, role=?, client_id=?, active=? WHERE id = ?', [b.name, b.email.trim(), role, clientId, b.active === false ? 0 : 1, id]);
   if (b.password) {
-    if (String(b.password).length < 6) throw new HttpError(400, 'A senha precisa ter pelo menos 6 caracteres.');
     await run('UPDATE users SET password_hash = ? WHERE id = ?', [bcrypt.hashSync(String(b.password), 10), id]);
   }
   res.json({ success: true });

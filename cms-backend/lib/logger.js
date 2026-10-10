@@ -29,6 +29,10 @@ function streamFor(now) {
     if (stream) stream.end();
     day = d;
     stream = fs.createWriteStream(path.join(LOG_DIR, `servidor-${d}.log`), { flags: 'a' });
+    // sem isso, um erro no stream (disco cheio, arquivo travado por outro
+    // processo etc.) sobe como exceção não tratada e derruba o servidor —
+    // que a tarefa do Windows reinicia a cada 5s, num loop de crash.
+    stream.on('error', (err) => { try { console.error('[logger] erro no stream de log:', err); } catch {} });
     try { prune(); } catch { /* limpeza é opcional */ }
   }
   return stream;

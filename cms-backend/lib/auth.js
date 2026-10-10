@@ -33,11 +33,25 @@ function verifyPreview(token) {
 
 // Assinatura das URLs de stream de câmera: o <img> do player não manda
 // cabeçalho Authorization, então a autorização vai na própria URL.
-function cameraSig(camId) {
-  return crypto.createHmac('sha256', SECRET).update('cam:' + camId).digest('hex').slice(0, 24);
+// O link inclui expiração (~1h) para que um link vazado não funcione pra sempre
+// depois que a TV/câmera for revogada.
+const CAMERA_LINK_TTL_SECONDS = 60 * 60;
+
+function cameraSignature(camId, exp) {
+  return crypto.createHmac('sha256', SECRET).update(`cam:${camId}:${exp}`).digest('hex').slice(0, 24);
 }
-function checkCameraSig(camId, sig) {
-  const expected = cameraSig(camId);
+
+// Gera a assinatura + expiração pra montar a URL do stream.
+function signCameraLink(camId) {
+  const exp = Math.floor(Date.now() / 1000) + CAMERA_LINK_TTL_SECONDS;
+  return { exp, sig: cameraSignature(camId, exp) };
+}
+
+// Confere a assinatura E se o link ainda não expirou.
+function verifyCameraLink(camId, exp, sig) {
+  const expNum = parseInt(exp, 10);
+  if (!Number.isFinite(expNum) || Date.now() >= expNum * 1000) return false;
+  const expected = cameraSignature(camId, expNum);
   return typeof sig === 'string' && sig.length === expected.length &&
     crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
 }
@@ -85,6 +99,6 @@ function requireClientScope(req, res, next) {
 }
 
 module.exports = {
-  signUser, signPreview, verifyPreview, cameraSig, checkCameraSig,
+  signUser, signPreview, verifyPreview, signCameraLink, verifyCameraLink,
   userFromToken, requireAuth, requireAdmin, scopeClientId, requireClientScope,
 };

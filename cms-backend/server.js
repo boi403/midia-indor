@@ -16,14 +16,44 @@ const presence = require('./lib/presence');
 const finance = require('./lib/finance');
 const backup = require('./lib/backup');
 const monitor = require('./lib/monitor');
+const billingCron = require('./lib/billing-cron');
+const config = require('./lib/config');
+const rateLimit = require('./lib/rate-limit');
 
 process.on('uncaughtException', monitor.handleFatal);
 process.on('unhandledRejection', monitor.handleRejection);
 
 const app = express();
 app.set('trust proxy', 'loopback');
-app.use(cors());
+
+// Origens liberadas para a API do painel. Sem "cors_origins" no config.json,
+// só libera localhost (ambiente de desenvolvimento) e requisições sem Origin
+// (TVs, apps, curl) — nunca um wildcard público como antes.
+function corsOrigin(origin, callback) {
+  if (!origin) return callback(null, true);
+  const allowList = config.get().cors_origins;
+  if (Array.isArray(allowList) && allowList.length) return callback(null, allowList.includes(origin));
+  callback(null, /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin));
+}
+app.use(cors({ origin: corsOrigin }));
+
+// Cabeçalhos mínimos de segurança em toda resposta (inclusive /uploads, logo
+// abaixo): nosniff evita que o navegador "adivinhe" um upload como HTML/JS.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  next();
+});
+
 app.use(express.json({ limit: '2mb' }));
+
+// Camada de defesa contra flood em cima do que a borda (ex.: Cloudflare, na
+// frente do túnel) já filtra. Limites generosos — o objetivo é parar scripts
+// de flood óbvios sem incomodar uso normal (várias TVs atrás do mesmo NAT de
+// escritório, por exemplo). Rotas sensíveis (login, cadastro, webhook) têm
+// limites bem mais apertados, aplicados nelas mesmas.
+app.use('/api', rateLimit({ windowMs: 60000, max: 400, message: 'Muitas requisições. Aguarde um pouco.' }));
+app.use('/v1/player', rateLimit({ windowMs: 60000, max: 600, message: 'Muitas requisições. Aguarde um pouco.' }));
 
 const ROOT = path.join(__dirname, '..');
 const PLAYER_FILE = path.join(ROOT, 'signage-player.html');
@@ -46,6 +76,13 @@ app.use('/api/admin', requireAuth, require('./routes/admin').router);
 app.use('/api/dashboard', requireAuth, require('./routes/dashboard'));
 app.use('/api/devices', requireAuth, require('./routes/devices'));
 app.use('/api/reports', require('./routes/reports'));
+// billing.js vem antes de programming/content: suas rotas públicas (/signup,
+// /webhooks/mercadopago) precisam ser alcançadas sem passar pelo
+// requireAuth incondicional que programming.js/content.js aplicam a
+// qualquer caminho não reconhecido dentro deles (router.use sem path
+// restringe a todo /api/*, e devolve 401 sem chamar next() — nunca
+// chegaria em billing.js se ele viesse depois).
+app.use('/api', require('./routes/billing'));
 app.use('/api', require('./routes/programming'));
 app.use('/api', require('./routes/content'));
 app.get('/health', (req, res) => res.json({ ok: true }));
@@ -81,6 +118,14 @@ ready.then(() => {
     }
     throw err;
   });
+  // Contra slowloris e conexões penduradas: desiste de clientes que mandam
+  // cabeçalhos/corpo devagar demais de propósito. keepAliveTimeout um pouco
+  // acima do padrão de proxies na frente (ex.: Cloudflare) evita fechar
+  // conexões que o proxy ainda pretende reusar.
+  server.headersTimeout = 10_000;
+  server.requestTimeout = 20_000;
+  server.keepAliveTimeout = 65_000;
+  server.maxHeadersCount = 100;
   realtime.attach(server);
   setNotifier((evt) => realtime.notifyManifest(evt).catch(e => console.error('[ws]', e.message)));
   presence.start();
@@ -88,6 +133,7 @@ ready.then(() => {
   server.listen(PORT, () => {
     monitor.start();
     backup.start();
+    billingCron.start();
     console.log(`CMS Mídia Indoor 2.0 rodando na porta ${PORT}`);
     console.log(`  Player da TV:  http://<ip-deste-servidor>:${PORT}/tv`);
     console.log(`  API do painel: http://localhost:${PORT}/api`);

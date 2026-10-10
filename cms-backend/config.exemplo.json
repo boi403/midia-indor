@@ -17,5 +17,30 @@
     "copia_extra": "",
     "copiar_uploads": false
   },
-  "healthchecks_url": ""
+  "healthchecks_url": "",
+  "smtp": {
+    "host": "smtp.gmail.com",
+    "port": 587,
+    "secure": false,
+    "user": "",
+    "pass": "",
+    "from": ""
+  },
+  "mercadopago": {
+    "access_token": ""
+  },
+  "billing": {
+    "price_cents": 25000,
+    "grace_days": 3,
+    "public_host": "",
+    "setup_fees": {
+      "with_computer_cents": 40000,
+      "without_computer_cents": 267543
+    },
+    "tiers": [
+      { "max_tvs": 1, "price_cents": 25000 },
+      { "max_tvs": 2, "price_cents": 50000 },
+      { "max_tvs": null, "price_cents": 79900 }
+    ]
+  }
 }

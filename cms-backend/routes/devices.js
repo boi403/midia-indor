@@ -78,7 +78,7 @@ router.post('/claim', requireAdmin, async (req, res) => {
 router.get('/:id', async (req, res) => {
   const d = await loadDevice(req, req.params.id);
   const commands = await all('SELECT id, command, payload, issued_at, delivered_at, acked_at FROM device_commands WHERE device_id = ? ORDER BY id DESC LIMIT 15', [d.id]);
-  const plays = await all('SELECT item_label, started_at, duration_ms, completed FROM playback_events WHERE device_id = ? ORDER BY id DESC LIMIT 20', [d.id]);
+  const plays = await all('SELECT item_label, started_at, duration_ms, completed FROM playback_events WHERE device_id = ? ORDER BY started_at DESC LIMIT 20', [d.id]);
   res.json({ ...present(d), commands, plays });
 });
 
@@ -142,7 +142,7 @@ router.post('/:id/command', async (req, res) => {
     let camId = null;
     if (command === 'show_camera') {
       camId = toInt(payload.camera_id);
-      if (!(await get('SELECT id FROM cameras WHERE id = ? AND client_id = ?', [camId, d.client_id]))) throw new HttpError(400, 'Câmera inválida.');
+      if (!(await get('SELECT id FROM cameras WHERE id = ? AND client_id = ? AND enabled = 1', [camId, d.client_id]))) throw new HttpError(400, 'Câmera inválida.');
     }
     await run('UPDATE devices SET pinned_camera_id = ? WHERE id = ?', [camId, d.id]);
     await bumpDevice(d.id);

@@ -6,8 +6,10 @@
 // conteúdo existente vira do cliente nº 1 e ganha uma "Playlist Principal".
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const logger = require('./lib/logger');
 
 const dbPath = process.env.CMS_DB ? path.resolve(process.env.CMS_DB) : path.resolve(__dirname, 'cms.db');
 const db = new sqlite3.Database(dbPath);
@@ -36,6 +38,12 @@ const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex'
 async function migrate() {
   await run('PRAGMA foreign_keys = ON');
   await run('PRAGMA journal_mode = WAL');
+  // evita "database is locked" sob concorrência (painel + heartbeats das TVs):
+  // em vez de falhar na hora, espera até 5s antes de desistir.
+  await run('PRAGMA busy_timeout = 5000');
+  // com WAL, NORMAL já é seguro (só perde commits muito recentes numa queda de
+  // energia) e acelera bastante a gravação frequente dos heartbeats das TVs.
+  await run('PRAGMA synchronous = NORMAL');
 
   // ---------- legado (v1) ----------
   await run(`CREATE TABLE IF NOT EXISTS configuracoes (
@@ -232,15 +240,63 @@ async function migrate() {
   )`);
   await run('CREATE INDEX IF NOT EXISTS idx_samples ON online_samples (ts)');
 
+  // ---------- recuperação de senha / cobrança ----------
+  await run(`CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS invoices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    amount_cents INTEGER NOT NULL,
+    due_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', -- pending | paid | expired
+    mp_payment_id TEXT,
+    mp_preference_id TEXT,
+    checkout_url TEXT,
+    paid_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  await run('CREATE INDEX IF NOT EXISTS idx_invoices_client ON invoices (client_id, due_date)');
+
+  await run(`CREATE TABLE IF NOT EXISTS pending_signups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    phone TEXT,
+    password_hash TEXT NOT NULL,
+    mp_preference_id TEXT,
+    status TEXT NOT NULL DEFAULT 'pending_payment', -- pending_payment | completed | expired
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+
   // conteúdo passa a ter dono
   for (const t of ['midia', 'slides', 'noticias', 'cameras']) await addColumn(t, 'client_id', 'INTEGER');
   await addColumn('midia', 'orientation', "TEXT NOT NULL DEFAULT 'any'");
   await addColumn('midia', 'bytes', 'INTEGER');
   await addColumn('midia', 'original_name', 'TEXT');
   await addColumn('slides', 'orientation', "TEXT NOT NULL DEFAULT 'any'");
+  // imagem de fundo opcional (upload do cliente), substitui o fundo CSS padrão da variante
+  await addColumn('slides', 'bg_url', 'TEXT');
+  // até 5 feeds de RSS por cliente, em JSON (substitui o antigo news_feed_url de um só)
+  await addColumn('clients', 'news_feed_urls', 'TEXT');
   await addColumn('noticias', 'enabled', 'INTEGER NOT NULL DEFAULT 1');
+  // taxa única de implementação no cadastro público: true = cliente já tem
+  // computador (R$250+R$150), false = levamos o equipamento (R$2.675,43)
+  await addColumn('pending_signups', 'has_computer', 'INTEGER NOT NULL DEFAULT 1');
   // início da queda já avisada no Telegram (NULL = sem alerta pendente)
   await addColumn('devices', 'alert_offline_since', 'TEXT');
+
+  // índices para as consultas mais frequentes (painel filtrando por cliente,
+  // player montando a playlist, histórico de comandos/eventos das TVs)
+  for (const t of ['midia', 'slides', 'cameras', 'noticias', 'devices', 'campaigns']) {
+    await run(`CREATE INDEX IF NOT EXISTS idx_${t}_client ON ${t} (client_id)`);
+  }
+  await run('CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist ON playlist_items (playlist_id, position)');
+  await run('CREATE INDEX IF NOT EXISTS idx_device_commands_device ON device_commands (device_id, delivered_at)');
 
   await seed();
 }
@@ -295,9 +351,16 @@ async function seed() {
   }
 
   // As TVs da v1 abrem /player-app/signage-player.html sem pareamento e se
-  // identificam com o token fixo "dev_local". Esse token vira um dispositivo de
-  // verdade do cliente nº 1, para continuarem funcionando e aparecerem no painel.
-  if (!(await get('SELECT id FROM devices WHERE token_hash = ?', [sha256('dev_local')]))) {
+  // identificam com o token fixo "dev_local". Esse token é público (está no
+  // código-fonte) e dava acesso ao manifesto/câmeras do cliente nº 1 para
+  // qualquer um que o conhecesse — por isso só é mais criado se o operador
+  // confirmar explicitamente que ainda tem TVs antigas dependendo dele, via
+  // variável de ambiente LEGACY_DEV_LOCAL=1 (defina no .bat de inicialização).
+  // Instalações novas, ou que já pareiam as TVs corretamente, não precisam
+  // disso: o padrão (variável ausente) é NÃO criar esse dispositivo legado.
+  // Quando puder, repareie essas TVs normalmente pelo painel e desligue a
+  // variável de ambiente.
+  if (process.env.LEGACY_DEV_LOCAL && !(await get('SELECT id FROM devices WHERE token_hash = ?', [sha256('dev_local')]))) {
     await run(`INSERT INTO devices (client_id, name, location, orientation, status, token_hash)
       VALUES (1, 'Tela Principal (legado)', 'Recepção', ?, 'active', ?)`, [
       (await get('SELECT orientation FROM configuracoes WHERE id = 1'))?.orientation || 'landscape', sha256('dev_local'),
@@ -305,12 +368,32 @@ async function seed() {
   }
 
   if (!(await get("SELECT id FROM users WHERE role = 'admin' LIMIT 1"))) {
-    await run(`INSERT INTO users (name, email, password_hash, role) VALUES ('Administrador', 'admin@midiaindoor.local', ?, 'admin')`, [bcrypt.hashSync('admin123', 10)]);
-    await run(`INSERT OR IGNORE INTO users (name, email, password_hash, role, client_id) VALUES ('Hotel Araguaia', 'hotel@midiaindoor.local', ?, 'client', 1)`, [bcrypt.hashSync('hotel123', 10)]);
-    console.log('\n[setup] Usuários iniciais criados:');
-    console.log('        admin@midiaindoor.local / admin123   (administrador)');
-    console.log('        hotel@midiaindoor.local / hotel123   (cliente nº 1)');
-    console.log('        Troque as senhas em "Minha conta" após o primeiro login.\n');
+    // Senhas aleatórias geradas só nesta primeira execução (tabela de usuários
+    // vazia) — nunca mais uma senha padrão conhecida de antemão no código-fonte.
+    const adminPassword = crypto.randomBytes(9).toString('hex');
+    const clientPassword = crypto.randomBytes(9).toString('hex');
+    await run(`INSERT INTO users (name, email, password_hash, role) VALUES ('Administrador', 'admin@midiaindoor.local', ?, 'admin')`, [bcrypt.hashSync(adminPassword, 10)]);
+    await run(`INSERT OR IGNORE INTO users (name, email, password_hash, role, client_id) VALUES ('Hotel Araguaia', 'hotel@midiaindoor.local', ?, 'client', 1)`, [bcrypt.hashSync(clientPassword, 10)]);
+    const banner = [
+      '',
+      "=== SENHAS INICIAIS GERADAS — ANOTE E TROQUE EM 'Minha conta' ===",
+      `  admin@midiaindoor.local / ${adminPassword}   (administrador)`,
+      `  hotel@midiaindoor.local / ${clientPassword}   (cliente nº 1)`,
+      'Essas senhas só aparecem aqui, nesta primeira execução. Troque-as em',
+      '"Minha conta" assim que fizer o primeiro login.',
+      '===================================================================',
+      '',
+    ].join('\n');
+    console.log(banner);
+    // garante que a senha fique registrada em logs/servidor-*.log mesmo quando
+    // o banco é iniciado fora do server.js (ex.: ferramentas.js), que não
+    // instala o redirecionamento do console para o arquivo de log.
+    try {
+      fs.mkdirSync(logger.LOG_DIR, { recursive: true });
+      const now = new Date();
+      const file = path.join(logger.LOG_DIR, `servidor-${logger.stamp(now).slice(0, 10)}.log`);
+      fs.appendFileSync(file, `${logger.stamp(now)} [INFO] ${banner}\n`);
+    } catch { /* o console.log acima já mostrou as senhas */ }
   }
 }
 

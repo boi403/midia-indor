@@ -19,8 +19,11 @@ function newPairingCode() {
   return `TV-${chars.slice(0, 4)}-${chars.slice(4)}`;
 }
 
+// Sem proxy reverso confiável na frente deste servidor: X-Forwarded-For pode
+// ser forjado pela própria TV para falsificar o IP exibido no painel. req.ip
+// (Express) é a fonte confiável aqui.
 function clientIp(req) {
-  return (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().replace(/^::ffff:/, '');
+  return (req.ip || '').replace(/^::ffff:/, '');
 }
 
 // Resolve a TV pelo token. Tokens "pv_<jwt>" são do preview no painel: leem o
@@ -103,20 +106,28 @@ router.post('/heartbeat', deviceAuth, async (req, res) => {
   });
 });
 
+const EVENTS_INSERT_CHUNK = 100;
+
 router.post('/events', deviceAuth, async (req, res) => {
   if (req.preview) return res.json({ accepted: 0 });
-  const events = Array.isArray(req.body?.events) ? req.body.events.slice(0, 500) : [];
-  let accepted = 0;
-  for (const e of events) {
-    if (!e.started_at) continue;
+  const events = (Array.isArray(req.body?.events) ? req.body.events.slice(0, 500) : []).filter(e => e && e.started_at);
+  // Insere em lotes de uma só instrução multi-linha em vez de um INSERT (um
+  // commit com fsync) por evento — até 500 eventos por requisição chegavam a
+  // ser 500 commits separados.
+  for (let i = 0; i < events.length; i += EVENTS_INSERT_CHUNK) {
+    const chunk = events.slice(i, i + EVENTS_INSERT_CHUNK);
+    const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+    const params = [];
+    for (const e of chunk) {
+      params.push(
+        req.device.id, req.device.client_id, String(e.asset_id || e.item_id || ''), String(e.label || '').slice(0, 200),
+        String(e.playlist_id || ''), String(e.started_at), e.duration_ms | 0, e.completed === false ? 0 : 1,
+      );
+    }
     await run(`INSERT INTO playback_events (device_id, client_id, item_id, item_label, playlist_id, started_at, duration_ms, completed)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
-      req.device.id, req.device.client_id, String(e.asset_id || e.item_id || ''), String(e.label || '').slice(0, 200),
-      String(e.playlist_id || ''), String(e.started_at), e.duration_ms | 0, e.completed === false ? 0 : 1,
-    ]);
-    accepted++;
+      VALUES ${placeholders}`, params);
   }
-  res.json({ accepted });
+  res.json({ accepted: events.length });
 });
 
 router.post('/commands/:id/ack', deviceAuth, async (req, res) => {

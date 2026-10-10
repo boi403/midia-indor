@@ -98,7 +98,7 @@ export default function Media() {
           {shown.map((m) => (
             <article key={m.id} className="media-card">
               <div className={`thumb ${m.orientation === 'portrait' ? 'thumb-portrait' : ''}`}>
-                {m.type === 'video' ? <video src={m.full_url} muted preload="metadata" /> : <img src={m.full_url} alt="" loading="lazy" />}
+                {m.type === 'video' ? <video src={m.full_url} muted preload="none" /> : <img src={m.full_url} alt="" loading="lazy" />}
                 <span className="thumb-tag">{m.type === 'video' ? <><Film size={12} /> vídeo</> : 'imagem'}</span>
               </div>
               <div className="media-body">

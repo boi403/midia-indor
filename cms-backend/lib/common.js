@@ -46,6 +46,31 @@ async function checkLimit(clientId, kind) {
   if (n >= limit) throw new HttpError(409, `Limite do plano atingido: ${n}/${limit} ${label}. Fale com o administrador para ampliar.`);
 }
 
+// Mensalidade por faixa de quantidade de TVs: 1 TV = R$250, 2 TVs = R$500,
+// 3 ou mais = R$799. Configurável em config.json (billing.tiers); estes são
+// só os valores padrão caso a config não defina a tabela.
+const TIER_DEFAULTS = [
+  { max_tvs: 1, price_cents: 25000 },
+  { max_tvs: 2, price_cents: 50000 },
+  { max_tvs: null, price_cents: 79900 }, // null = sem limite superior (3+)
+];
+
+function tierFeeCents(tvCount) {
+  const config = require('./config');
+  const tiers = config.get().billing?.tiers;
+  const list = Array.isArray(tiers) && tiers.length ? tiers : TIER_DEFAULTS;
+  for (const t of list) {
+    if (t.max_tvs == null || tvCount <= t.max_tvs) return t.price_cents;
+  }
+  return list[list.length - 1].price_cents;
+}
+
+// Mesma contagem de TVs "reais" (exclui pareamentos pendentes) usada em checkLimit.
+async function clientTvCount(clientId) {
+  const { n } = await get("SELECT count(*) AS n FROM devices WHERE client_id = ? AND status != 'pending'", [clientId]);
+  return n;
+}
+
 let notifier = () => {};
 function setNotifier(fn) { notifier = fn; }
 
@@ -65,4 +90,4 @@ const toInt = (v, def = null) => {
 };
 const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
 
-module.exports = { HttpError, publicUrl, clientPlan, requireFeature, checkLimit, bumpClient, bumpDevice, setNotifier, toInt, clamp };
+module.exports = { HttpError, publicUrl, clientPlan, requireFeature, checkLimit, bumpClient, bumpDevice, setNotifier, toInt, clamp, tierFeeCents, clientTvCount };

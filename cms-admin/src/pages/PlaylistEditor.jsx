@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useBlocker, useParams } from 'react-router-dom';
-import { ArrowLeft, GripVertical, Plus, Trash2, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Film, Image as ImageIcon, Presentation, Camera, Newspaper, Save } from 'lucide-react';
+import { ArrowLeft, GripVertical, Plus, Trash2, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Film, Image as ImageIcon, Presentation, Camera, Newspaper, Save, AlertTriangle } from 'lucide-react';
 import api, { errorMessage } from '../api';
 import { useAuth } from '../auth';
-import { Loading, Toggle, useToast, fmtDuration, ORIENTATION_LABEL } from '../ui';
+import { Loading, Empty, Toggle, useToast, fmtDuration, ORIENTATION_LABEL } from '../ui';
 
 let keySeq = 0;
 const withKey = (it) => ({ ...it, _key: ++keySeq });
@@ -22,6 +22,7 @@ export default function PlaylistEditor() {
   const [pl, setPl] = useState(null);
   const [items, setItems] = useState([]);
   const [lib, setLib] = useState(null);
+  const [libError, setLibError] = useState('');
   const [tab, setTab] = useState('media');
   const [open, setOpen] = useState(null);
   const [dirty, setDirty] = useState(false);
@@ -31,7 +32,7 @@ export default function PlaylistEditor() {
   const load = useCallback(() => {
     api.get(`/playlists/${id}`).then((r) => { setPl(r.data); setItems(r.data.items.map(withKey)); setDirty(false); })
       .catch((e) => toast(errorMessage(e), 'error'));
-    api.get('/playlists/library').then((r) => setLib(r.data)).catch(() => {});
+    api.get('/playlists/library').then((r) => { setLib(r.data); setLibError(''); }).catch((e) => setLibError(errorMessage(e)));
   }, [id, toast]);
   useEffect(load, [load]);
 
@@ -96,7 +97,18 @@ export default function PlaylistEditor() {
     } catch (err) { toast(errorMessage(err), 'error'); } finally { setSaving(false); }
   };
 
-  if (!pl || !lib) return <Loading />;
+  if (!pl) return <Loading />;
+  if (!lib) {
+    if (libError) {
+      return (
+        <Empty icon={AlertTriangle} title="Não foi possível carregar a biblioteca de mídias">
+          <p>{libError}</p>
+          <div className="btn-row"><button className="btn btn-primary" onClick={load}>Tentar novamente</button></div>
+        </Empty>
+      );
+    }
+    return <Loading />;
+  }
   const total = items.filter((i) => i.enabled).reduce((s, i) => s + i.duration_ms * (i.repeat || 1), 0);
 
   const onDropList = (e, at) => {
@@ -217,7 +229,7 @@ function Thumb({ d }) {
   const Icon = d.icon;
   if (d.thumb) {
     return d.thumb.type === 'video'
-      ? <video className="mini-thumb" src={d.thumb.full_url} muted preload="metadata" />
+      ? <video className="mini-thumb" src={d.thumb.full_url} muted preload="none" />
       : <img className="mini-thumb" src={d.thumb.full_url} alt="" loading="lazy" />;
   }
   return <span className="mini-thumb mini-icon"><Icon size={16} /></span>;

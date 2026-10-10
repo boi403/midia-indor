@@ -1,9 +1,10 @@
 import axios from 'axios';
 
 // Em desenvolvimento (Vite na 5173) a API fica na porta 3000 da mesma máquina;
-// quando o painel é servido pelo próprio backend, usa a mesma origem.
+// em produção o backend pode estar em outra porta (env PORT) ou atrás de um
+// proxy reverso (80/443), então usamos sempre a própria origem da página.
 export const API_ROOT = import.meta.env.VITE_API_URL
-  || (import.meta.env.DEV || location.port !== '3000' ? `${location.protocol}//${location.hostname}:3000` : location.origin);
+  || (import.meta.env.DEV ? `${location.protocol}//${location.hostname}:3000` : window.location.origin);
 
 const TOKEN_KEY = 'cms_token';
 const CLIENT_KEY = 'cms_client_id';

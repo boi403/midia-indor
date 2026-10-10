@@ -3,8 +3,19 @@ const express = require('express');
 const { all, get } = require('../database');
 const { requireAuth, requireClientScope } = require('../lib/auth');
 const { requireFeature, HttpError } = require('../lib/common');
+const finance = require('../lib/finance');
 
 const router = express.Router();
+
+// Cotações (ver lib/finance.js — são as mesmas pra todos os clientes, nada
+// sensível). Rota pública e registrada ANTES do router.use(requireAuth...)
+// abaixo, de propósito: o player da TV não autentica como usuário, só como
+// dispositivo, então não pode chamar nada que exija login de painel. É o
+// mecanismo "separado" descrito no manifest.js/finance.js para a TV buscar
+// cotações atualizadas sem precisar reconstruir o manifesto inteiro (o que
+// forçava toda TV de todo cliente a recarregar a cada ~10 min).
+router.get('/quotes', (req, res) => res.json({ quotes: finance.getQuotes() }));
+
 router.use(requireAuth, requireClientScope, async (req, res, next) => {
   await requireFeature(req, 'reports', 'Relatórios');
   next();

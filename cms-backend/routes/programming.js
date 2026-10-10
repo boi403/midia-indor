@@ -35,10 +35,13 @@ router.post('/playlists', async (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) throw new HttpError(400, 'Dê um nome à playlist.');
   await checkLimit(req.clientId, 'playlists');
+  // valida o copy_from ANTES de criar a playlist, para não deixar uma playlist
+  // vazia órfã quando a origem não existir
+  let src = null;
+  if (req.body.copy_from) src = await loadPlaylist(req, req.body.copy_from);
   const hasAny = await get('SELECT id FROM playlists WHERE client_id = ?', [req.clientId]);
   const r = await run('INSERT INTO playlists (client_id, name, is_default) VALUES (?, ?, ?)', [req.clientId, name, hasAny ? 0 : 1]);
-  if (req.body.copy_from) {
-    const src = await loadPlaylist(req, req.body.copy_from);
+  if (src) {
     await run(`INSERT INTO playlist_items (playlist_id, kind, ref_id, portrait_ref_id, duration_ms, position, enabled, repeat, start_date, end_date, start_time, end_time)
       SELECT ?, kind, ref_id, portrait_ref_id, duration_ms, position, enabled, repeat, start_date, end_date, start_time, end_time FROM playlist_items WHERE playlist_id = ?`, [r.lastID, src.id]);
   }
@@ -89,19 +92,17 @@ router.put('/playlists/:id/items', async (req, res) => {
     return [pl.id, it.kind, it.kind === 'news' ? null : String(it.ref_id), portrait, clamp(toInt(it.duration_ms, 10000), 1000, 3600000), i,
       it.enabled === false ? 0 : 1, clamp(toInt(it.repeat, 1), 1, 10), date(it.start_date), date(it.end_date), time(it.start_time), time(it.end_time)];
   });
-  await run('BEGIN');
-  try {
-    await run('DELETE FROM playlist_items WHERE playlist_id = ?', [pl.id]);
-    for (const p of clean) {
-      await run(`INSERT INTO playlist_items (playlist_id, kind, ref_id, portrait_ref_id, duration_ms, position, enabled, repeat, start_date, end_date, start_time, end_time)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, p);
-    }
-    await run("UPDATE playlists SET updated_at = datetime('now') WHERE id = ?", [pl.id]);
-    await run('COMMIT');
-  } catch (e) {
-    await run('ROLLBACK');
-    throw e;
+  // Sem transação explícita: a conexão sqlite é compartilhada com outras
+  // requisições concorrentes (heartbeats de TVs, etc.), então um BEGIN/COMMIT
+  // cobrindo vários awaits poderia prender escritas de outras requisições.
+  // Um único INSERT multi-linha deixa a operação atômica sem precisar disso.
+  await run('DELETE FROM playlist_items WHERE playlist_id = ?', [pl.id]);
+  if (clean.length) {
+    const placeholders = clean.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?)').join(', ');
+    await run(`INSERT INTO playlist_items (playlist_id, kind, ref_id, portrait_ref_id, duration_ms, position, enabled, repeat, start_date, end_date, start_time, end_time)
+      VALUES ${placeholders}`, clean.flat());
   }
+  await run("UPDATE playlists SET updated_at = datetime('now') WHERE id = ?", [pl.id]);
   await bumpClient(req.clientId);
   res.json({ success: true });
 });

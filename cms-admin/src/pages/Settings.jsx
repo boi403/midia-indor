@@ -71,9 +71,25 @@ export default function Settings() {
 
         <section className="card">
           <h2 className="card-title">Feed de notícias (RSS)</h2>
-          <Field label="URL do feed" hint="WordPress: adicione /feed/ ao endereço do site. G1: https://g1.globo.com/rss/g1/">
-            <input className="input" type="url" value={cfg.news_feed_url || ''} onChange={set('news_feed_url')} placeholder="https://www.prefeitura.gov.br/feed/" />
-          </Field>
+          <p className="muted small">Até 5 feeds. As manchetes de todos são misturadas no mesmo painel de notícias.</p>
+          {(cfg.news_feed_urls && cfg.news_feed_urls.length ? cfg.news_feed_urls : ['']).map((url, i) => (
+            <Field key={i} label={`Feed ${i + 1}`} hint={i === 0 ? 'WordPress: adicione /feed/ ao endereço do site. G1: https://g1.globo.com/rss/g1/' : undefined} className="span-2">
+              <div className="logo-row">
+                <input className="input" type="url" value={url} placeholder="https://www.prefeitura.gov.br/feed/"
+                  onChange={(e) => {
+                    const next = [...(cfg.news_feed_urls && cfg.news_feed_urls.length ? cfg.news_feed_urls : [''])];
+                    next[i] = e.target.value;
+                    setCfg({ ...cfg, news_feed_urls: next });
+                  }} />
+                {(cfg.news_feed_urls || []).length > 1 && (
+                  <button type="button" className="link danger" onClick={() => setCfg({ ...cfg, news_feed_urls: cfg.news_feed_urls.filter((_, j) => j !== i) })}>Remover</button>
+                )}
+              </div>
+            </Field>
+          ))}
+          {(cfg.news_feed_urls || []).length < 5 && (
+            <button type="button" className="btn btn-ghost" onClick={() => setCfg({ ...cfg, news_feed_urls: [...(cfg.news_feed_urls || []), ''] })}>+ Adicionar feed</button>
+          )}
         </section>
 
         <div className="sticky-actions"><button className="btn btn-primary">Salvar aparência</button></div>

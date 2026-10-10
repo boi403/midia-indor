@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Tv, KeyRound } from 'lucide-react';
+import { Plus, Tv, KeyRound, AlertTriangle } from 'lucide-react';
 import api, { errorMessage, API_ROOT } from '../api';
 import { useAuth } from '../auth';
 import { useLive } from '../live';
@@ -45,17 +45,46 @@ export default function Devices() {
   const [pending, setPending] = useState([]);
   const [scope, setScope] = useState(isAdmin && clientId ? 'client' : 'all');
   const [adding, setAdding] = useState(false);
+  const [error, setError] = useState('');
   const toast = useToast();
+  const seqRef = useRef(0);
+  const lastErrorRef = useRef('');
+  const liveTimer = useRef(null);
 
   const load = useCallback(() => {
+    const seq = ++seqRef.current;
     const headers = isAdmin && scope === 'all' ? { 'X-Client-Id': '' } : undefined;
-    api.get('/devices', { headers }).then((r) => setDevices(r.data)).catch((e) => toast(errorMessage(e), 'error'));
-    if (isAdmin) api.get('/devices/pending').then((r) => setPending(r.data)).catch(() => {});
+    api.get('/devices', { headers }).then((r) => {
+      if (seq !== seqRef.current) return;
+      setDevices(r.data);
+      setError('');
+      lastErrorRef.current = '';
+    }).catch((e) => {
+      if (seq !== seqRef.current) return;
+      const msg = errorMessage(e);
+      setError(msg);
+      if (msg !== lastErrorRef.current) { toast(msg, 'error'); lastErrorRef.current = msg; }
+    });
+    if (isAdmin) api.get('/devices/pending').then((r) => { if (seq === seqRef.current) setPending(r.data); }).catch(() => {});
   }, [isAdmin, scope, toast]);
 
   useEffect(() => { load(); const t = setInterval(load, 20000); return () => clearInterval(t); }, [load]);
-  useLive((msg) => { if (msg.type?.startsWith('device.') || msg.device_id) load(); });
+  useEffect(() => () => clearTimeout(liveTimer.current), []);
+  useLive((msg) => {
+    if (msg.type?.startsWith('device.') || msg.device_id) {
+      clearTimeout(liveTimer.current);
+      liveTimer.current = setTimeout(load, 1500);
+    }
+  });
 
+  if (error && !devices) {
+    return (
+      <Empty icon={AlertTriangle} title="Não foi possível carregar os dispositivos">
+        <p>{error}</p>
+        <div className="btn-row"><button className="btn btn-primary" onClick={load}>Tentar novamente</button></div>
+      </Empty>
+    );
+  }
   if (!devices) return <Loading />;
   const online = devices.filter((d) => d.online && d.status === 'active').length;
 
