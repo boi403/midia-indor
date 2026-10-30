@@ -39,9 +39,40 @@ app.use(cors({ origin: corsOrigin }));
 
 // Cabeçalhos mínimos de segurança em toda resposta (inclusive /uploads, logo
 // abaixo): nosniff evita que o navegador "adivinhe" um upload como HTML/JS.
+//
+// O player da TV (/tv, /player-app) precisa de uma CSP mais permissiva (APIs
+// externas de clima/cotação, vídeo/câmera por http:// na rede local) e de
+// poder ser carregado num <iframe> da MESMA origem (preview no painel,
+// device_actions). O painel/API, ao contrário, não usa nada disso — por
+// isso duas políticas, a mais estrita como padrão. Antes havia uma só CSP
+// pras duas coisas: ou ficava fraca demais pro painel, ou bloqueava as APIs
+// externas que o player usa (ambas as policies de um header + <meta> são
+// aplicadas juntas, e o resultado é a interseção — a mais restrita vence).
+const DEFAULT_CSP =
+  "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; " +
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; " +
+  "img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' wss:; " +
+  "frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'none'";
+const PLAYER_CSP =
+  "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; " +
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; " +
+  "img-src 'self' data: blob: https: http:; media-src 'self' blob: https: http:; " +
+  "connect-src 'self' ws: wss: https://api.open-meteo.com https://economia.awesomeapi.com.br https://query1.finance.yahoo.com; " +
+  "frame-src 'self' https: http:; frame-ancestors 'self'; object-src 'none'; base-uri 'none'";
+
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
+  // Referrer-Policy importa aqui porque o link de redefinição de senha e os
+  // tokens de dispositivo/preview viajam na query string das URLs.
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  // HSTS só tem efeito quando o navegador já chegou por https (ex.: atrás do
+  // túnel Cloudflare); em http puro (LAN) o cabeçalho é simplesmente ignorado.
+  res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  const isPlayer = req.path === '/tv' || req.path === '/tv/' || req.path.startsWith('/player-app/');
+  // SAMEORIGIN (não DENY) no player: o painel embute /tv?preview=... num
+  // <iframe> da própria origem pra pré-visualizar uma TV.
+  res.setHeader('X-Frame-Options', isPlayer ? 'SAMEORIGIN' : 'DENY');
+  res.setHeader('Content-Security-Policy', isPlayer ? PLAYER_CSP : DEFAULT_CSP);
   next();
 });
 
@@ -123,7 +154,9 @@ ready.then(() => {
   // acima do padrão de proxies na frente (ex.: Cloudflare) evita fechar
   // conexões que o proxy ainda pretende reusar.
   server.headersTimeout = 10_000;
-  server.requestTimeout = 20_000;
+  // Uploads de mídia chegam a 500MB (routes/content.js): 20s matava envios
+  // grandes em links lentos antes mesmo do corpo terminar de chegar.
+  server.requestTimeout = 10 * 60_000;
   server.keepAliveTimeout = 65_000;
   server.maxHeadersCount = 100;
   realtime.attach(server);

@@ -78,7 +78,7 @@ export default function Shell() {
     <div className={`shell ${open ? 'nav-open' : ''}`}>
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">▣</span>
+          <span className="brand-mark" aria-hidden="true" />
           <div>
             <strong>Mídia Indoor</strong>
             <small>{isAdmin ? 'Administração' : user?.client?.name}</small>

@@ -53,7 +53,10 @@ export default function DeviceActions({ device, onChange, showConfigure = true }
       </div>
       <Modal open={!!preview} title={`Preview — ${device.name}`} onClose={() => setPreview(null)} wide>
         <div className={`preview-frame ${portrait ? 'portrait' : ''}`}>
-          {preview && <iframe src={preview} title={`Preview de ${device.name}`} />}
+          {/* sandbox sem "allow-same-origin": o conteúdo (slides/RSS de um
+              tenant, potencialmente hostil) não pode ler localStorage/cookies
+              desta origem nem o token do admin que está vendo o preview. */}
+          {preview && <iframe src={preview} title={`Preview de ${device.name}`} sandbox="allow-scripts" />}
         </div>
         <p className="muted small">O preview mostra exatamente o manifesto desta TV (playlist, campanhas no horário atual e aparência). Ele não conta como exibição nos relatórios.</p>
       </Modal>

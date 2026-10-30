@@ -35,8 +35,19 @@ setInterval(() => {
   for (const [ip, h] of upgradeAttempts) if (h.reset < now) upgradeAttempts.delete(ip);
 }, 60000).unref();
 
+// Atrás do túnel/proxy (ver app.set('trust proxy','loopback') em server.js),
+// toda conexão chega com o MESMO remoteAddress (o conector local do túnel) —
+// sem olhar o cabeçalho encaminhado, os limites por IP abaixo (MAX_CONN_PER_IP,
+// MAX_UPGRADES_PER_IP_PER_MIN) ficam globais na prática: um único atacante
+// sem autenticação derruba o WebSocket pra todo mundo. Só confia no cabeçalho
+// quando a conexão em si já vem do loopback (mesmo critério do Express).
 function upgradeIp(req) {
-  return (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  const direct = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  if (direct === '127.0.0.1' || direct === '::1') {
+    const forwarded = req.headers['cf-connecting-ip'] || String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (forwarded) return forwarded;
+  }
+  return direct;
 }
 function tooManyUpgrades(ip) {
   const now = Date.now();

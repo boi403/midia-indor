@@ -1,6 +1,7 @@
 // Cobrança via Mercado Pago: cadastro público com pagamento (signup + checkout),
 // webhook de confirmação de pagamento e faturas do cliente já autenticado.
 const express = require('express');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { run, get, all } = require('../database');
 const { requireAuth, requireClientScope } = require('../lib/auth');
@@ -82,18 +83,62 @@ router.post('/signup', rateLimit({ windowMs: 15 * 60000, max: 5, message: 'Muita
   }
 });
 
+// Confere a assinatura do webhook (x-signature) quando um segredo estiver
+// configurado (mercadopago.webhook_secret em config.json — opcional, pra não
+// quebrar quem já está rodando sem ele configurado). Mesmo sem a assinatura,
+// o processamento abaixo sempre rebusca o pagamento na API do Mercado Pago
+// com o NOSSO access_token antes de agir, o que já impede um corpo de
+// webhook forjado de aprovar um pagamento que não existe — a assinatura
+// fecha a lacuna de alguém descobrir o paymentId de um pagamento de
+// terceiro e forçar o reprocessamento antes da hora, ou fazer flood.
+function verifyWebhookSignature(req, paymentId) {
+  const secret = config.get().mercadopago?.webhook_secret;
+  if (!secret) return true;
+  const header = req.get('x-signature') || '';
+  const requestId = req.get('x-request-id') || '';
+  const parts = {};
+  for (const p of header.split(',')) {
+    const [k, v] = p.split('=');
+    if (k && v) parts[k.trim()] = v.trim();
+  }
+  if (!parts.ts || !parts.v1) return false;
+  const manifest = `id:${paymentId};request-id:${requestId};ts:${parts.ts};`;
+  const expected = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
+  try { return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(parts.v1, 'hex')); }
+  catch { return false; }
+}
+
 // Webhook do Mercado Pago: formato novo (JSON) e legado (IPN por query string).
 router.post('/webhooks/mercadopago', rateLimit({ windowMs: 60000, max: 30, message: 'Muitas requisições.' }), async (req, res) => {
   try {
     const type = req.body?.type || req.query.type;
     const paymentId = req.body?.data?.id || req.query['data.id'];
-    if (type !== 'payment' || !paymentId) return res.json({ received: true });
+    // o id vira path da API do Mercado Pago (mp.getPayment) sem mais nenhuma
+    // checagem; sem isso, um valor tipo "../../merchant_orders/123" faz o
+    // servidor chamar outro endpoint da API do MP com o nosso access_token
+    if (type !== 'payment' || !paymentId || !/^\d{1,20}$/.test(String(paymentId))) return res.json({ received: true });
+    if (!verifyWebhookSignature(req, paymentId)) {
+      console.warn(`[billing] webhook com assinatura inválida para o pagamento ${paymentId}`);
+      return res.json({ received: true });
+    }
 
     // idempotência: o Mercado Pago reenvia o webhook várias vezes
     const already = await get('SELECT id FROM invoices WHERE mp_payment_id = ?', [String(paymentId)]);
     if (already) return res.json({ received: true });
 
     const payment = await mp.getPayment(paymentId);
+
+    // Reembolso/chargeback de um pagamento que já tínhamos ativado: suspende
+    // o cliente em vez de deixar o acesso ativo sem o pagamento valer mais
+    // (o MP não tinha esse caminho antes — só o status "approved" era tratado).
+    if (payment.status === 'refunded' || payment.status === 'charged_back') {
+      const paidInvoice = await get('SELECT * FROM invoices WHERE mp_payment_id = ?', [String(paymentId)]);
+      if (paidInvoice?.client_id) {
+        await run("UPDATE clients SET status = 'suspended' WHERE id = ?", [paidInvoice.client_id]);
+        console.warn(`[billing] pagamento ${paymentId} (${payment.status}) — cliente ${paidInvoice.client_id} suspenso`);
+      }
+      return res.json({ received: true });
+    }
     if (payment.status !== 'approved') return res.json({ received: true });
 
     const ref = String(payment.external_reference || '');
@@ -149,6 +194,14 @@ router.post('/webhooks/mercadopago', rateLimit({ windowMs: 60000, max: 30, messa
       // cobrança recorrente mensal, gerada pelo cron de faturamento
       const invoice = await get('SELECT * FROM invoices WHERE id = ?', [ref]);
       if (!invoice || invoice.status === 'paid') return res.json({ received: true });
+      // o valor pago precisa cobrir a fatura — sem isto, um pagamento de
+      // qualquer valor com external_reference apontando pra esta fatura
+      // marcaria ela como paga.
+      const paidCents = Math.round(Number(payment.transaction_amount) * 100);
+      if (payment.currency_id !== 'BRL' || !(paidCents >= invoice.amount_cents)) {
+        console.warn(`[billing] pagamento ${paymentId} não cobre a fatura ${invoice.id}: pago ${payment.currency_id} ${paidCents / 100}, esperado BRL ${invoice.amount_cents / 100}`);
+        return res.json({ received: true });
+      }
       await run(
         `UPDATE invoices SET status = 'paid', mp_payment_id = ?, paid_at = datetime('now') WHERE id = ?`,
         [String(paymentId), invoice.id]

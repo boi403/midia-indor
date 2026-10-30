@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Receipt } from 'lucide-react';
-import api, { errorMessage } from '../api';
+import api, { errorMessage, goToCheckout } from '../api';
 import { PageHeader, Loading, Empty, useToast, parseDate, fmtDate, fmtMoney } from '../ui';
 
 const STATUS_BADGE = {
@@ -31,7 +31,7 @@ export default function Invoices() {
     setPayingId(id);
     try {
       const r = await api.post(`/invoices/${id}/pay`);
-      window.location.href = r.data.checkout_url;
+      goToCheckout(r.data.checkout_url);
     } catch (err) {
       toast(errorMessage(err), 'error');
       setPayingId(null);

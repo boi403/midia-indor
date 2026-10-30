@@ -16,7 +16,7 @@ function getTransport() {
   });
 }
 
-async function sendMail({ to, subject, html }) {
+async function sendMail({ to, subject, html, text }) {
   const transport = getTransport();
   const smtp = config.get().smtp || {};
   if (!transport) {
@@ -24,7 +24,9 @@ async function sendMail({ to, subject, html }) {
     return false;
   }
   try {
-    await transport.sendMail({ from: smtp.from || smtp.user, to, subject, html });
+    // "text" era aceito aqui mas nunca repassado: e-mails que só mandavam
+    // text (ex.: confirmação de pagamento) saíam com o corpo vazio.
+    await transport.sendMail({ from: smtp.from || smtp.user, to, subject, html, text });
     return true;
   } catch (err) {
     console.error('[mailer] falha ao enviar e-mail:', err.message);

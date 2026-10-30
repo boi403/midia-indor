@@ -376,8 +376,8 @@ async function seed() {
     // vazia) — nunca mais uma senha padrão conhecida de antemão no código-fonte.
     const adminPassword = crypto.randomBytes(9).toString('hex');
     const clientPassword = crypto.randomBytes(9).toString('hex');
-    await run(`INSERT INTO users (name, email, password_hash, role) VALUES ('Administrador', 'admin@midiaindoor.local', ?, 'admin')`, [bcrypt.hashSync(adminPassword, 10)]);
-    await run(`INSERT OR IGNORE INTO users (name, email, password_hash, role, client_id) VALUES ('Hotel Araguaia', 'hotel@midiaindoor.local', ?, 'client', 1)`, [bcrypt.hashSync(clientPassword, 10)]);
+    await run(`INSERT INTO users (name, email, password_hash, role) VALUES ('Administrador', 'admin@midiaindoor.local', ?, 'admin')`, [bcrypt.hashSync(adminPassword, 12)]);
+    await run(`INSERT OR IGNORE INTO users (name, email, password_hash, role, client_id) VALUES ('Hotel Araguaia', 'hotel@midiaindoor.local', ?, 'client', 1)`, [bcrypt.hashSync(clientPassword, 12)]);
     const banner = [
       '',
       "=== SENHAS INICIAIS GERADAS — ANOTE E TROQUE EM 'Minha conta' ===",
@@ -388,16 +388,13 @@ async function seed() {
       '===================================================================',
       '',
     ].join('\n');
-    console.log(banner);
-    // garante que a senha fique registrada em logs/servidor-*.log mesmo quando
-    // o banco é iniciado fora do server.js (ex.: ferramentas.js), que não
-    // instala o redirecionamento do console para o arquivo de log.
-    try {
-      fs.mkdirSync(logger.LOG_DIR, { recursive: true });
-      const now = new Date();
-      const file = path.join(logger.LOG_DIR, `servidor-${logger.stamp(now).slice(0, 10)}.log`);
-      fs.appendFileSync(file, `${logger.stamp(now)} [INFO] ${banner}\n`);
-    } catch { /* o console.log acima já mostrou as senhas */ }
+    // process.stdout.write, não console.log: o logger.install() do server.js
+    // (require()ado antes de tudo) grava TODO console.log também em
+    // logs/servidor-*.log, que fica no disco por 30 dias — qualquer acesso a
+    // esse arquivo (backup, suporte, vazamento) exporia a conta admin
+    // enquanto a senha não for trocada. process.stdout.write não passa por
+    // esse hook, então a senha só aparece aqui, uma vez, nesta execução.
+    process.stdout.write(banner + '\n');
   }
 }
 

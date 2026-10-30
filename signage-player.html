@@ -187,7 +187,7 @@ html,body{height:100%;overflow:hidden;background:#000;color:var(--bone);
 <div id="offline"><i></i><span>SEM CONEXÃO — EXIBINDO CACHE</span></div>
 <div id="diag"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
 <script>
 "use strict";
 /* =========================================================================
@@ -232,6 +232,20 @@ function escapeAttr(str) {
   return String(str).replace(/[&<>"']/g, function(m) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
   });
+}
+
+// Normaliza e valida URLs vindas do manifesto/backend (http(s) apenas): o
+// objeto URL já rejeita "javascript:"/"file:"/"content:" e devolve um .href
+// sem aspas cruas, então também fecha o escape de CSS em background-image
+// que um escapeAttr simples não fecha (as aspas voltam a ser literais depois
+// que o navegador decodifica o atributo HTML).
+function safeUrl(u, base) {
+  if (!u) return null;
+  try {
+    var parsed = new URL(String(u), base || ORIGIN);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.href;
+  } catch (e) { return null; }
 }
 
 /* ---------- armazenamento tolerante a falha ---------- */
@@ -410,7 +424,7 @@ function renderSide(el, m){
   if(el.dataset.sig === sig) return;
   el.dataset.sig = sig;
 
-  var logoHtml = m.branding.logo_url ? '<img src="' + m.branding.logo_url + '" style="max-width:80%;max-height:calc(8*var(--vh,1vh));display:block;margin:0 auto calc(1*var(--vh,1vh));">' : '';
+  var logoHtml = m.branding.logo_url ? '<img src="' + escapeAttr(m.branding.logo_url) + '" style="max-width:80%;max-height:calc(8*var(--vh,1vh));display:block;margin:0 auto calc(1*var(--vh,1vh));">' : '';
   var html = '<div class="logo">' + logoHtml + sanitize(m.branding.name || "") +
              '<small>' + sanitize(m.branding.tagline || "") + '</small></div>';
   if(w.clock && w.clock.enabled){
@@ -586,7 +600,16 @@ function playNext(){
   var item = items[S.index];
   var startedAt = new Date().toISOString();
 
-  var node = buildItem(item);
+  var node;
+  try { node = buildItem(item); }
+  catch(e){
+    // item com campo obrigatório faltando (ex.: slide sem menu/dias): pula
+    // pro próximo em vez de travar a tela preta pra sempre (o timer nunca
+    // seria reagendado se a exceção escapasse de dentro do setTimeout).
+    S.errors.push("buildItem:" + (item && item.id));
+    S.itemTimer = setTimeout(playNext, 2000);
+    return;
+  }
   node.className = "item";
   main.appendChild(node);
   requestAnimationFrame(function(){ node.classList.add("on"); });
@@ -605,7 +628,7 @@ function playNext(){
     }, 700);
   });
 
-  var dur = item.duration_ms || 10000;
+  var dur = Math.max(2000, Number(item.duration_ms) || 10000);
   var vid = node.querySelector("video");
 
   function finish(completed){
@@ -624,7 +647,7 @@ function playNext(){
     });
     vid.onended = function(){ finish(true); };
     vid.onerror = function(){ S.errors.push("video:"+item.id); finish(false); };
-    dur = (item.duration_ms || 0) || 30000;
+    dur = Math.max(2000, Number(item.duration_ms) || 30000);
     progress(dur);
     clearTimeout(S.itemTimer);
     S.itemTimer = setTimeout(function(){ finish(true); }, dur + 2000);
@@ -653,11 +676,11 @@ function buildItem(item){
   var mediaType = usePortrait ? (item.portrait_type || item.type) : item.type;
   var mediaUrl = usePortrait ? item.portrait_url : item.url;
   if(mediaType === "video"){
-    d.innerHTML = '<video muted playsinline preload="auto" src="' + escapeAttr(mediaUrl) + '"></video>';
+    d.innerHTML = '<video muted playsinline preload="auto" src="' + escapeAttr(safeUrl(mediaUrl) || "") + '"></video>';
     return d;
   }
   if(mediaType === "image"){
-    d.innerHTML = '<img alt="" src="' + escapeAttr(mediaUrl) + '">';
+    d.innerHTML = '<img alt="" src="' + escapeAttr(safeUrl(mediaUrl) || "") + '">';
     return d;
   }
   if(item.type === "news"){
@@ -696,7 +719,8 @@ function buildItem(item){
   if(item.type === "widget" && item.widget === "qrcode"){
     var c = item.config || {};
     // sobrepõe um degradê escuro à imagem de fundo pra manter o texto claro legível
-    var qrBgStyle = c.bg ? ' style="background-image:linear-gradient(140deg,rgba(5,10,14,.78),rgba(5,10,14,.6)),url(&quot;' + escapeAttr(c.bg) + '&quot;);background-size:cover;background-position:center"' : '';
+    var qrBg = safeUrl(c.bg);
+    var qrBgStyle = qrBg ? ' style="background-image:linear-gradient(140deg,rgba(5,10,14,.78),rgba(5,10,14,.6)),url(&quot;' + escapeAttr(qrBg) + '&quot;);background-size:cover;background-position:center"' : '';
     d.innerHTML =
       '<div class="slide qr"' + qrBgStyle + '>' +
         '<div><div class="rule"></div>' +
@@ -725,7 +749,8 @@ function buildItem(item){
     return d;
   }
   // sobrepõe um degradê escuro à imagem de fundo pra manter o texto claro legível
-  var slideBgStyle = s.bg ? ' style="background-image:linear-gradient(140deg,rgba(5,10,14,.78),rgba(5,10,14,.6)),url(&quot;' + escapeAttr(s.bg) + '&quot;);background-size:cover;background-position:center"' : '';
+  var slideBg = safeUrl(s.bg);
+  var slideBgStyle = slideBg ? ' style="background-image:linear-gradient(140deg,rgba(5,10,14,.78),rgba(5,10,14,.6)),url(&quot;' + escapeAttr(slideBg) + '&quot;);background-size:cover;background-position:center"' : '';
   d.innerHTML = '<div class="slide ' + escapeAttr(s.variant || "institucional") + '"' + slideBgStyle + '>' +
     (s.kick ? '<div class="kick">' + sanitize(s.kick) + '</div>' : '') +
     '<div class="rule"></div>' +
@@ -806,16 +831,26 @@ function hideBlocked(){
 
 function applyManifest(m){
   var first = !S.manifest;
-  var layoutChanged = !first && (targetOrientation(m) !== S.orientation ||
-    JSON.stringify(layoutFor(m, targetOrientation(m))) !== S.layoutSig);
+  var layoutChanged;
+  try {
+    layoutChanged = !first && (targetOrientation(m) !== S.orientation ||
+      JSON.stringify(layoutFor(m, targetOrientation(m))) !== S.layoutSig);
+  } catch(e){
+    // manifesto malformado (branding/layout ausente etc.): mantém o que já
+    // está no ar e no cache em vez de travar a tela com uma exceção.
+    S.errors.push("manifest:invalid");
+    return;
+  }
   S.manifest = m;
-  S.revision = m.revision;
+  S.revision = Number(m.revision) || 0; // nunca HTML cru no painel de diagnóstico (renderDiag)
   if(!CONFIG.PREVIEW) Store.set("manifest_cache", JSON.stringify(m));
-  scheduleHeartbeat((m.policy && m.policy.heartbeat_s) || CONFIG.HEARTBEAT_S);
+  // nunca menos de 10s: um manifesto malicioso/com bug com heartbeat_s:0
+  // martelaria o backend sem parar.
+  scheduleHeartbeat(Math.max(10, Number(m.policy && m.policy.heartbeat_s) || CONFIG.HEARTBEAT_S));
 
   if(first || layoutChanged) {
-    buildStage(m);
-  } else { 
+    try { buildStage(m); } catch(e){ S.errors.push("buildStage:" + e.message); }
+  } else {
     document.documentElement.style.setProperty("--brand", m.branding.primary || "#0E4C68");
     document.documentElement.style.setProperty("--accent", m.branding.accent || "#C9A227");
     if(document.getElementById("z-side")) renderSide(document.getElementById("z-side"), m);
@@ -899,7 +934,17 @@ function runCommand(cmd){
     case "play":        if(S.paused){ S.paused = false; playNext(); } break;
     case "clear_cache": if("caches" in window) caches.delete("signage-v1").then(function(){ location.reload(); }); break;
     case "reboot":      if(window.Shell && Shell.reboot) Shell.reboot(); else location.reload(); break;
-    case "update_app":  if(window.Shell && Shell.update) Shell.update(cmd.payload.apk_url); break;
+    case "update_app":
+      // Defesa de profundidade: só aceita uma URL http(s) na MESMA origem do
+      // backend (nunca um host arbitrário mandado por quem conseguiu injetar
+      // uma mensagem no WebSocket/heartbeat). Isto sozinho não substitui TLS
+      // (ver H1 do relatório) nem checagem de assinatura do APK no lado
+      // nativo (Kotlin) antes de instalar — ambos continuam necessários lá.
+      if(window.Shell && Shell.update && cmd.payload){
+        var apkUrl = safeUrl(cmd.payload.apk_url);
+        if(apkUrl && apkUrl.indexOf(ORIGIN + "/") === 0) Shell.update(apkUrl);
+      }
+      break;
   }
   renderDiag();
   if(!CONFIG.DEMO && cmd.id) api("POST", "/player/commands/" + cmd.id + "/ack", { ok:true }).catch(function(){});
@@ -962,7 +1007,7 @@ function startPairing(){
         return;
       }
       document.getElementById("pair-code").textContent = r.pairing_code || "TV-····-····";
-      setTimeout(poll, r.poll_after_ms || 5000);
+      setTimeout(poll, Math.max(2000, Number(r.poll_after_ms) || 5000));
     }).catch(function(){ setTimeout(poll, 10000); });
   })();
 }

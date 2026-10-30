@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { run, get } = require('../database');
+const { run, get, sha256 } = require('../database');
 const { signUser, requireAuth } = require('../lib/auth');
 const { clientPlan, trustedUrl } = require('../lib/common');
 const rateLimit = require('../lib/rate-limit');
@@ -77,13 +77,16 @@ router.post('/forgot-password', rateLimit({ windowMs: 5 * 60000, max: 10 }), asy
   const link0 = trustedUrl(req, '/redefinir-senha');
   const { email } = req.body || {};
   if (email) {
-    const u = await get('SELECT id FROM users WHERE email = ?', [String(email).trim()]);
+    const u = await get('SELECT id, email FROM users WHERE email = ?', [String(email).trim()]);
     if (u) {
       const token = crypto.randomBytes(32).toString('hex');
-      await run("INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+1 hour'))", [token, u.id]);
+      // guarda o hash, não o token: um dump do banco (backup, acesso indevido)
+      // não dá pra ninguém usar os links de redefinição ainda válidos (1h).
+      await run("INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+1 hour'))", [sha256(token), u.id]);
       const link = `${link0}?token=${token}`;
+      // usa o e-mail já verificado no banco, não o valor cru do body
       mailer.sendMail({
-        to: email,
+        to: u.email,
         subject: 'Redefinir senha — CMS Mídia Indoor',
         html: `<p>Clique no link abaixo para definir uma nova senha. Ele expira em 1 hora.</p><p><a href="${link}">${link}</a></p>`,
       }).catch(() => {});
@@ -97,11 +100,11 @@ router.post('/forgot-password', rateLimit({ windowMs: 5 * 60000, max: 10 }), asy
 router.post('/reset-password', rateLimit({ windowMs: 5 * 60000, max: 10 }), async (req, res) => {
   const { token, password } = req.body || {};
   if (!password || String(password).length < 10) return res.status(400).json({ error: 'A nova senha precisa ter pelo menos 10 caracteres.' });
-  const row = await get("SELECT * FROM password_reset_tokens WHERE token = ? AND used_at IS NULL AND expires_at > datetime('now')", [String(token || '')]);
+  const row = await get("SELECT * FROM password_reset_tokens WHERE token = ? AND used_at IS NULL AND expires_at > datetime('now')", [sha256(String(token || ''))]);
   if (!row) return res.status(400).json({ error: 'Link inválido ou expirado. Solicite um novo.' });
   // token_version + 1: encerra na hora qualquer sessão aberta com a senha antiga
   // (inclusive a de quem vazou a senha, se for esse o motivo da redefinição).
-  await run("UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?", [bcrypt.hashSync(String(password), 10), row.user_id]);
+  await run("UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?", [bcrypt.hashSync(String(password), 12), row.user_id]);
   await run("UPDATE password_reset_tokens SET used_at = datetime('now') WHERE token = ?", [row.token]);
   res.json({ success: true });
 });
@@ -110,12 +113,20 @@ router.get('/me', requireAuth, async (req, res) => {
   res.json({ user: await publicUser(req.user) });
 });
 
+// Encerra a sessão no servidor: invalida o token atual (e qualquer outro já
+// emitido) na hora, em vez de confiar só no front apagar o localStorage —
+// um token roubado antes do "Sair" parava de funcionar só na expiração (30d).
+router.post('/logout', requireAuth, async (req, res) => {
+  await run('UPDATE users SET token_version = token_version + 1 WHERE id = ?', [req.user.id]);
+  res.json({ success: true });
+});
+
 router.post('/password', requireAuth, async (req, res) => {
   const { current, next } = req.body || {};
   if (!next || String(next).length < 10) return res.status(400).json({ error: 'A nova senha precisa ter pelo menos 10 caracteres.' });
   const u = await get('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
   if (!bcrypt.compareSync(String(current || ''), u.password_hash)) return res.status(400).json({ error: 'Senha atual incorreta.' });
-  await run('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?', [bcrypt.hashSync(String(next), 10), req.user.id]);
+  await run('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?', [bcrypt.hashSync(String(next), 12), req.user.id]);
   res.json({ success: true });
 });
 

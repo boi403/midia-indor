@@ -9,14 +9,38 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(!!session.token);
   const [clientId, setClientIdState] = useState(session.clientId);
 
-  const logout = useCallback(() => {
+  const logout = useCallback((fromUnauthorized) => {
+    // revoga o token no servidor (token_version++) antes de apagar a sessão local,
+    // pra um token já vazado não continuar valendo os 30 dias restantes dele.
+    // Precisa do header explícito: o interceptor de api.js lê session.token de
+    // forma assíncrona, e a linha de baixo já apaga o token antes disso rodar
+    // — sem o header aqui, a chamada saía sem Authorization, o servidor
+    // respondia 401 e o token_version nunca era incrementado (o "Sair" não
+    // revogava nada). Se já estamos saindo por causa de um 401, o token já
+    // está morto no servidor: não tem por que chamar de novo.
+    const token = session.token;
+    if (token && !fromUnauthorized) {
+      api.post('/auth/logout', null, { headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+    }
     session.token = null;
     session.clientId = null;
     setClientIdState(null);
     setUser(null);
   }, []);
 
-  useEffect(() => { setUnauthorizedHandler(logout); }, [logout]);
+  useEffect(() => { setUnauthorizedHandler(() => logout(true)); }, [logout]);
+
+  // Sincroniza o logout entre abas: se outra aba apagar o token (clicou em
+  // "Sair" ou recebeu um 401), esta também limpa o usuário em memória — sem
+  // isso, esta aba continuava com a sessão e o WebSocket abertos até a
+  // próxima chamada de API cair em 401 por conta própria.
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'cms_token' && !e.newValue) logout(true);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [logout]);
 
   // sessão persistente: revalida o token salvo ao abrir o painel
   useEffect(() => {

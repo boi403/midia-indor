@@ -59,7 +59,7 @@ const uploadFilter = (req, file, cb) => cb(null, ALLOWED_EXTENSIONS.includes(pat
 
 const upload = multer({
   storage: diskStorage,
-  limits: { fileSize: 2 * 1024 * 1024 * 1024 },
+  limits: { fileSize: 500 * 1024 * 1024 },
   fileFilter: uploadFilter,
 });
 
@@ -75,6 +75,32 @@ const ORIENT = (v) => (['landscape', 'portrait'].includes(v) ? v : 'any');
 const removeFile = (filename) => {
   const f = path.join(uploadsDir, path.basename(filename || ''));
   if (filename && fs.existsSync(f)) fs.unlinkSync(f);
+};
+
+// Normaliza logo_url/bg_url (o painel manda a full_url) de volta pro caminho
+// relativo e recusa qualquer coisa que não seja um upload nosso: sem isso, um
+// cliente podia apontar pra uma URL externa arbitrária (XSS no player, que
+// renderiza isso como <img src>, e vazamento de dados pro host externo).
+const relUploadPath = (url) => {
+  if (!url) return null;
+  const rel = String(url).replace(/^https?:\/\/[^/]+(?=\/uploads\/)/, '');
+  if (!/^\/uploads\/[\w.-]+\.(jpe?g|png|webp|gif|mp4|webm)$/i.test(rel)) {
+    throw new HttpError(400, 'Imagem inválida.');
+  }
+  return rel;
+};
+
+// Antes de apagar um arquivo de /uploads, confirma que nenhum outro registro
+// (de qualquer cliente) ainda referencia esse mesmo caminho — evita que um
+// cliente apague, por IDOR via bg_url, um arquivo que pertence a outro cliente.
+const isUploadStillUsed = async (relPath, excludeSlideId) => {
+  if (!relPath) return false;
+  const [logo, slide, midiaRow] = await Promise.all([
+    get('SELECT 1 FROM clients WHERE logo_url = ?', [relPath]),
+    get('SELECT 1 FROM slides WHERE bg_url = ? AND id != ?', [relPath, excludeSlideId || '']),
+    get('SELECT 1 FROM midia WHERE url = ?', [relPath]),
+  ]);
+  return Boolean(logo || slide || midiaRow);
 };
 
 // ---------- rotas públicas usadas pelo player ----------
@@ -125,8 +151,12 @@ async function fetchOneFeed(feedUrl) {
     feedFailureCache.delete(feedUrl);
     return { items };
   } catch (err) {
-    feedFailureCache.set(feedUrl, { at: Date.now(), error: err.message });
-    return { items: hit?.items || [], error: err.message };
+    // mensagem genérica pro cliente: o detalhe (inclui status HTTP, útil pra
+    // varrer portas/serviços internos) só vai pro log do servidor.
+    console.warn(`[feed] falha ao buscar ${feedUrl}: ${err.message}`);
+    const safeMessage = 'Não foi possível obter este feed agora.';
+    feedFailureCache.set(feedUrl, { at: Date.now(), error: safeMessage });
+    return { items: hit?.items || [], error: safeMessage };
   }
 }
 
@@ -156,7 +186,10 @@ function getFeedSingleFlight(feedUrl) {
 }
 
 // Faixas privadas/loopback/link-local — feed não pode apontar pra rede interna (SSRF).
-const PRIVATE_IPV4_CIDRS = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', '169.254.0.0/16'];
+const PRIVATE_IPV4_CIDRS = [
+  '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', '169.254.0.0/16',
+  '0.0.0.0/8', '100.64.0.0/10', '198.18.0.0/15',
+];
 function ipv4ToInt(ip) {
   const p = ip.split('.').map(Number);
   return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
@@ -170,17 +203,22 @@ function inIpv4Cidr(ip, cidr) {
 function isDisallowedIp(address, family) {
   if (family === 6 || address.includes(':')) {
     const a = address.toLowerCase();
-    if (a === '::1') return true; // loopback IPv6
+    if (a === '::' || a === '::1') return true; // indefinido / loopback IPv6
     const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(a);
     if (mapped) return isDisallowedIp(mapped[1], 4);
     const firstGroup = a.split(':')[0];
-    if (/^f[cd]/.test(firstGroup)) return true; // fc00::/7
+    if (/^f[cd]/.test(firstGroup)) return true; // fc00::/7 (unique local)
+    if (firstGroup === 'fe80') return true; // fe80::/10 (link-local)
     return false;
   }
   return PRIVATE_IPV4_CIDRS.some((cidr) => inIpv4Cidr(address, cidr));
 }
 
-// Só http(s) e hosts que não resolvam pra rede interna/privada.
+// Só http(s) e hosts que não resolvam pra rede interna/privada. A checagem
+// de IP aqui só cobre o host ORIGINAL do feed — por isso fetchFeed() também
+// desliga redirects (redirect:'manual'): sem isso, um feed externo (que
+// passou nesta checagem) poderia devolver um 302 pra um IP interno e o
+// fetch seguiria sem revalidar nada (bypass clássico de SSRF via redirect).
 async function assertSafeFeedUrl(feedUrl) {
   let parsed;
   try { parsed = new URL(feedUrl); } catch { throw new Error('URL do feed inválida.'); }
@@ -214,8 +252,15 @@ async function readBodyCapped(response, maxBytes) {
 
 async function fetchFeed(feedUrl) {
   await assertSafeFeedUrl(feedUrl);
-  const response = await fetch(feedUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MidiaIndoor/2.0)' }, signal: AbortSignal.timeout(8000) });
-  if (!response.ok) throw new Error(`Feed respondeu com status ${response.status}.`);
+  const response = await fetch(feedUrl, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MidiaIndoor/2.0)' },
+    signal: AbortSignal.timeout(8000),
+    redirect: 'manual', // ver comentário em assertSafeFeedUrl: nunca seguir redirect sem revalidar o IP
+  });
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error('Feed redireciona para outro endereço; configure a URL de destino final.');
+  }
+  if (!response.ok) throw new Error('Feed indisponível.');
   const xml = await readBodyCapped(response, 1024 * 1024);
   const items = [];
   const itemRe = /<item[^>]*>([\s\S]*?)<\/item>/gi;
@@ -261,7 +306,7 @@ router.get('/config', async (req, res) => {
 router.put('/config', async (req, res) => {
   const b = req.body || {};
   const num = (v) => (v === '' || v == null || isNaN(Number(v)) ? null : Number(v));
-  const logo = b.logo_url ? String(b.logo_url).replace(/^https?:\/\/[^/]+(?=\/uploads\/)/, '') : null;
+  const logo = relUploadPath(b.logo_url);
   const feedUrls = (Array.isArray(b.news_feed_urls) ? b.news_feed_urls : []).map((u) => String(u || '').trim()).filter(Boolean).slice(0, 5);
   await run(`UPDATE clients SET name = COALESCE(?, name), tagline = ?, primary_color = ?, accent_color = ?, logo_url = ?,
       weather_lat = ?, weather_lon = ?, weather_city = ?, news_feed_url = ?, news_feed_urls = ?, timezone = ? WHERE id = ?`, [
@@ -338,10 +383,6 @@ router.get('/slides', async (req, res) => {
   res.json(rows.map((s) => ({ ...s, bg_full_url: publicUrl(req, s.bg_url) })));
 });
 
-// Normaliza o bg_url recebido do painel (que manda a full_url) de volta pra
-// caminho relativo, do mesmo jeito que /config já faz com o logo.
-const relUploadPath = (url) => (url ? String(url).replace(/^https?:\/\/[^/]+(?=\/uploads\/)/, '') : null);
-
 router.post('/slides', async (req, res) => {
   const b = req.body || {};
   const id = 's_' + Date.now() + Math.round(Math.random() * 1000);
@@ -362,7 +403,9 @@ router.put('/slides/:id', async (req, res) => {
   const r = await run(`UPDATE slides SET kick = ?, title = ?, text = ?, config_json = ?, duration_ms = COALESCE(?, duration_ms), orientation = ?, bg_url = ?
     WHERE id = ? AND client_id = ?`, [b.kick, b.title, b.text, b.config_json, toInt(b.duration_ms), ORIENT(b.orientation), bgUrl, req.params.id, req.clientId]);
   if (!r.changes) throw new HttpError(404, 'Slide não encontrado.');
-  if (existing.bg_url && existing.bg_url !== bgUrl) removeFile(existing.bg_url);
+  if (existing.bg_url && existing.bg_url !== bgUrl && !(await isUploadStillUsed(existing.bg_url, req.params.id))) {
+    removeFile(existing.bg_url);
+  }
   await bumpClient(req.clientId);
   res.json({ success: true });
 });
@@ -371,7 +414,7 @@ router.delete('/slides/:id', async (req, res) => {
   const existing = await get('SELECT bg_url FROM slides WHERE id = ? AND client_id = ?', [req.params.id, req.clientId]);
   const r = await run('DELETE FROM slides WHERE id = ? AND client_id = ?', [req.params.id, req.clientId]);
   if (!r.changes) throw new HttpError(404, 'Slide não encontrado.');
-  if (existing?.bg_url) removeFile(existing.bg_url);
+  if (existing?.bg_url && !(await isUploadStillUsed(existing.bg_url, req.params.id))) removeFile(existing.bg_url);
   await run(`DELETE FROM playlist_items WHERE kind = 'slide' AND ref_id = ? AND playlist_id IN (SELECT id FROM playlists WHERE client_id = ?)`, [req.params.id, req.clientId]);
   await bumpClient(req.clientId);
   res.json({ success: true });

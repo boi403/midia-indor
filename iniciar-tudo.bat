@@ -65,10 +65,12 @@ if "%PRECISA_BUILD%"=="1" (
     popd
 )
 
-rem O token de dispositivo legado "dev_local" (TVs da v1) agora so e criado se
-rem esta variavel estiver habilitada. Comente/remova esta linha quando todas as
-rem TVs antigas forem repareadas pelo sistema novo (Dispositivos > Adicionar).
-set "LEGACY_DEV_LOCAL=1"
+rem O token de dispositivo legado "dev_local" (TVs da v1) e um token fixo e
+rem publico (aparece no codigo-fonte do player) que da acesso remoto e sem
+rem autenticacao ao conteudo do cliente no 1 nas TVs antigas. Fica desligado
+rem por padrao. So religue temporariamente, repareando as TVs antigas pelo
+rem sistema novo (Dispositivos > Adicionar) assim que possivel.
+rem set "LEGACY_DEV_LOCAL=1"
 
 :loop_servidor
 echo Iniciando servidor...

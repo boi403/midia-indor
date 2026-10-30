@@ -54,7 +54,7 @@ function Home() {
 // o painel inteiro para uma tela branca — mostra um aviso com opção de recarregar.
 function RouteError() {
   const error = useRouteError();
-  console.error('Erro não tratado na rota:', error);
+  if (import.meta.env.DEV) console.error('Erro não tratado na rota:', error);
   return (
     <div className="boot">
       <p>Ocorreu um erro inesperado nesta página.</p>

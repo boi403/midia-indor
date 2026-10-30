@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Mídia Indoor Painel</string>
+    <string name="settings_title">Mídia Indoor</string>
+    <string name="settings_hint">Informe o endereço do painel administrativo desta rede (ex.: http://192.168.0.10:3000).</string>
+    <string name="settings_url_label">Endereço do servidor</string>
+    <string name="settings_url_placeholder">http://192.168.0.10:3000</string>
+    <string name="settings_connect">Conectar</string>
+    <string name="settings_error">Endereço inválido.</string>
+</resources>

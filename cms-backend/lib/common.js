@@ -22,7 +22,20 @@ function publicUrl(req, url) {
 // configurado (billing.public_host, atrás do túnel) e a rede local, onde o
 // sistema roda hoje (painel/TVs acessando por localhost ou IP da LAN).
 const LOCAL_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
-const LAN_HOST_RE = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/;
+
+// Valida que o hostname é de fato um IPv4 nas faixas privadas/loopback —
+// NUNCA um prefixo de string: "10.attacker.com" começa com "10." mas não é
+// um IP privado, e um regex de prefixo (/^(10\.|...)/) aceitava isso,
+// deixando qualquer um registrar um domínio assim e forjar o Host pra
+// roubar o token de redefinição de senha (ver comentário abaixo).
+function isPrivateLanIp(hostname) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
+  if (!m) return false;
+  const octets = m.slice(1).map(Number);
+  if (octets.some((n) => n > 255)) return false;
+  const [a, b] = octets;
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
 
 // Nunca confiar cegamente no cabeçalho Host: um atacante pode forjá-lo pra
 // "envenenar" um link sensível (ex.: mandar pro e-mail da vítima um link de
@@ -35,7 +48,7 @@ function trustedHost(req) {
   if (configured) return configured;
   const host = String(req.get('host') || '');
   const hostname = host.split(':')[0];
-  if (LOCAL_HOST_RE.test(host) || LAN_HOST_RE.test(hostname)) return host;
+  if (LOCAL_HOST_RE.test(host) || isPrivateLanIp(hostname)) return host;
   return null;
 }
 

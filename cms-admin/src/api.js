@@ -56,4 +56,19 @@ export function errorMessage(err, fallback = 'Algo deu errado. Tente novamente.'
 export const wsUrl = (path) => `${API_ROOT.replace(/^http/, 'ws')}${path}`;
 export const playerUrl = (query = '') => `${API_ROOT}/tv${query}`;
 
+// Só navega pro checkout do Mercado Pago, nunca pra URL que o backend (ou um
+// Mercado Pago mal configurado/interceptado) mande — sem isso, um valor como
+// "javascript:..." ou um domínio qualquer em checkout_url seria seguido às
+// cegas via window.location.href.
+export function goToCheckout(url) {
+  try {
+    const u = new URL(String(url));
+    if (u.protocol === 'https:' && /(^|\.)mercadopago\.com(\.br)?$/.test(u.hostname)) {
+      window.location.href = u.href;
+      return;
+    }
+  } catch { /* URL inválida: cai no erro abaixo */ }
+  throw new Error('Endereço de pagamento inválido.');
+}
+
 export default api;

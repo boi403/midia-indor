@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Rocket } from 'lucide-react';
-import api, { errorMessage } from '../api';
+import api, { errorMessage, goToCheckout } from '../api';
 
 export default function SignUp() {
   const [form, setForm] = useState({ company_name: '', email: '', password: '', phone: '', has_computer: true });
@@ -15,7 +15,7 @@ export default function SignUp() {
     setBusy(true);
     try {
       const { data } = await api.post('/signup', form);
-      window.location.href = data.checkout_url;
+      goToCheckout(data.checkout_url);
     } catch (err) {
       setError(errorMessage(err, 'Não foi possível concluir o cadastro.'));
       setBusy(false);
