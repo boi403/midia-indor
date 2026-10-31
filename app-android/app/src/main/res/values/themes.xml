@@ -2,4 +2,12 @@
 <resources>
 
     <style name="Theme.MyApplicationMidiaindor" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Tela de abertura: mostra a logo enquanto o app carrega, antes de trocar
+         para o tema normal (ver installSplashScreen() em MainActivity). -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.MyApplicationMidiaindor</item>
+    </style>
 </resources>

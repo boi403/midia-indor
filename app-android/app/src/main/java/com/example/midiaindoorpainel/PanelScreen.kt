@@ -43,7 +43,7 @@ private const val RETRY_DELAY_MS = 5000L
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun PanelScreen(serverUrl: String, onRequestSettings: () -> Unit) {
+fun PanelScreen(serverUrl: String, onRequestSettings: () -> Unit, onPageReady: () -> Unit = {}) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var pendingFileCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     val allowedOrigin = remember(serverUrl) {
@@ -99,8 +99,13 @@ fun PanelScreen(serverUrl: String, onRequestSettings: () -> Unit) {
                             error: WebResourceError,
                         ) {
                             if (request.isForMainFrame) {
+                                onPageReady() // libera a splash mesmo se a 1ª tentativa falhar
                                 handler.postDelayed({ view.loadUrl(serverUrl) }, RETRY_DELAY_MS)
                             }
+                        }
+
+                        override fun onPageFinished(view: WebView, url: String) {
+                            onPageReady()
                         }
 
                         // mantém a navegação dentro do painel configurado; qualquer outro destino
